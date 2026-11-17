@@ -1,0 +1,14 @@
+<Project>
+
+  <!-- Release のビルドが、ビルドした PC のパスを DLL に書かないようにする(配布する DLL・exe は src/ のプロジェクトだけ) -->
+  <Import Project="..\build\OhanamiPathMap.props" />
+
+  <!-- このフォルダ配下の共通設定。spikes/ には効かせない(ルートでなく src/ と tests/ に置くのは、spikes/ のビルドの設定を変えないため)。 -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

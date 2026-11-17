@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    配布する DLL・exe に、ビルドした PC のパスを残さない。
+    コンパイラは、pdb の場所(obj\Release\...\*.pdb の絶対パス)を DLL に書き込み、[CallerFilePath] などにはソースの絶対パスが入る。
+    配布物を開くと、開発者のユーザー名が読めてしまう。PathMap で、リポジトリのルートを /_/ に置き換える(コンパイラが、書き込むパスを置き換える。
+    決定的ビルドの公式の仕組み。Microsoft.SourceLink を足さずに済む)。
+    Release のときだけ効かせる。Debug は、F5 のデバッガがソースの場所を pdb のパスから探し、テストの失敗のスタックトレースの
+    「ファイル:行」を IDE が開けるように、実際のパスのままにする(Debug の出力は配布しない)。
+    効いているかは、tools/release/Publish-Release.ps1 が、配布物のすべてのファイルを調べて確かめる。
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PathMap>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..'))=/_/</PathMap>
+  </PropertyGroup>
+
+</Project>

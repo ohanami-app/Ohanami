@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    配布(publish)の出力から、入れないものを外す(App だけが取り込む)。
+    配布物の中身は、tools/release/allowed-files.tsv(名前を 1 つずつ書いた許可の表)と突き合わせる(tools/release/Publish-Release.ps1)。
+    ここで外すのは、NuGet のパッケージが運んでくる、実行に要らないもの:
+      - onnxruntime*.lib(リンク用のライブラリ)と onnxruntime_providers_tensorrt.dll(TensorRT は使わない)
+      - libSkiaSharp.pdb(約 92MB。デバッグ用)と、参照先の Ohanami.Core.pdb
+    Ohanami 自身の pdb は、CopyOutputSymbolsToPublishDirectory を false にして入れない(pdb には、ビルドした PC の絶対パスが入る)。
+    開発のビルド(Debug)の出力には、これらが残る(配布物ではないので、外さない)。
+  -->
+  <PropertyGroup>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <OhanamiNotPublished>;onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;onnxruntime_providers_tensorrt.dll;libSkiaSharp.pdb;Ohanami.Core.pdb;</OhanamiNotPublished>
+  </PropertyGroup>
+
+  <!--
+    配布物に、利用者向けの文書を入れる: 直下に LICENSE と THIRD-PARTY-NOTICES.md、licenses/ にライセンスの全文(リポジトリの同じパス)。
+    publish のときだけ(CopyToPublishDirectory)。開発のビルドの出力には入れない。
+    publish の出力が、リポジトリのファイルと同一であることは、tools/release/Publish-Release.ps1 が確かめる。
+  -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\licenses\*.txt" Link="licenses\%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="OhanamiRemoveFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$(OhanamiNotPublished.Contains(';%(Filename)%(Extension);'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

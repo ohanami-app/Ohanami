@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    Visual C++ ランタイムの DLL(5 つ)を exe の隣にコピーする。ORT(onnxruntime*.dll)と llama-server の一式が、これを使う
+    (docs/adr/0044-vc-runtime-bundled-app-local.md)。build/OhanamiCudaRuntime.targets の後に取り込む(OhanamiRuntimeDir をそちらで決める)。
+    CUDA・cuDNN と同じ置き方(平らに、exe の隣。開発のビルドも配布も同じ)。リポジトリ外の runtime/ (git 管理外)から名前を 1 つずつ指定してコピーし、
+    コピー元が 1 つでも無ければビルドを失敗させる。ワイルドカードは使わない。
+
+    DLL は、Visual Studio の再配布ファイル(VC\Redist\MSVC\<版>\x64\Microsoft.VC143.CRT\)を、変更せずに置く。置き場の版のディレクトリ名は OhanamiVcVersionDir で変えられる
+    (既定 14.44.35211_x64。同じディレクトリの SOURCE.txt に、取得元・版・SHA-256 を書く)。
+    ORT は MSVC 14.44.35207 でビルドされているので、再配布ファイルは 14.44.35207 以上が要る(0044)。
+    許可の表(tools/release/allowed-files.tsv)と同じ集合を指す。片方だけを変えると、配布物を作るときに止まる(DistributionLayoutTests が突き合わせる)。
+  -->
+  <PropertyGroup>
+    <OhanamiVcVersionDir Condition="'$(OhanamiVcVersionDir)' == ''">14.44.35211_x64</OhanamiVcVersionDir>
+    <OhanamiVcDir>$(OhanamiRuntimeDir)vcruntime\$(OhanamiVcVersionDir)\</OhanamiVcDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <OhanamiVcFile Include="$(OhanamiVcDir)msvcp140.dll" />
+    <OhanamiVcFile Include="$(OhanamiVcDir)msvcp140_1.dll" />
+    <OhanamiVcFile Include="$(OhanamiVcDir)msvcp140_atomic_wait.dll" />
+    <OhanamiVcFile Include="$(OhanamiVcDir)vcruntime140.dll" />
+    <OhanamiVcFile Include="$(OhanamiVcDir)vcruntime140_1.dll" />
+
+    <Content Include="@(OhanamiVcFile)" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CheckOhanamiVcFiles" BeforeTargets="BeforeBuild;AssignTargetPaths">
+    <Error Condition="!Exists('%(OhanamiVcFile.FullPath)')"
+           Text="Visual C++ ランタイムの DLL が無い: %(OhanamiVcFile.FullPath)。コピー元は $(OhanamiVcDir) (runtime/vcruntime/&lt;版&gt;/。環境変数 OHANAMI_RUNTIME_DIR で runtime/ の場所を切り替えられる)。" />
+  </Target>
+
+</Project>

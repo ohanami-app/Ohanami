@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- -windows を付けず、UseWPF / UseWindowsForms も付けない。Core から WPF の型を参照できないようにするため。 -->
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Ohanami.Core</AssemblyName>
+    <RootNamespace>Ohanami.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ohanami.Core.Tests" />
+    <InternalsVisibleTo Include="Ohanami.App.Tests" />   <!-- App のテストが、偽の Core(OhanamiCore.OpenAsync の内部の入口)を開く -->
+    <!-- 回帰ベンチ(tools/Ohanami.Bench。手元専用): VLM の出力の取り込み(CaptionStore)と、全文検索の索引の待ち・列の構成の比較に使う -->
+    <InternalsVisibleTo Include="Ohanami.Bench" />
+    <!-- ベンチのテスト(tests/Ohanami.Bench.Tests): vlm-check の比較が VlmResult など Core の内部の型を受け取る -->
+    <InternalsVisibleTo Include="Ohanami.Bench.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- DB -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <!-- 画像のデコード(前処理、サムネイル) -->
+    <PackageReference Include="SkiaSharp" Version="4.154.0" />
+    <!-- SigLIP2 の実行(画像側は CUDA EP)。CUDA ランタイム(cuBLAS など)と cuDNN は NuGet に含まれないので、アプリのフォルダに別に置く(ADR 0015、0016)。 -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.31.1" />
+
+  </ItemGroup>
+
+</Project>

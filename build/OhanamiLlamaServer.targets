@@ -1,0 +1,46 @@
+<Project>
+
+  <!--
+    llama-server の一式を、アプリの exe の隣に平らに置く(App だけが取り込む。build/OhanamiCudaRuntime.targets の後に取り込む)。
+    開発のビルドと配布(publish)で置き方は同じで、App は <アプリのフォルダ>\llama-server.exe を使う(AppPaths)。
+    名前を 1 つずつ指定する(ワイルドカードは使わない)。コピー元が 1 つでも無ければビルドを失敗させる。
+
+    ggml-cpu-*.dll の 14 個は、全部入れる。どれが読まれるかは、利用者の CPU で決まる(llama.cpp が起動時に CPU の命令を調べて選ぶ)ので、実行する PC のものだけには絞れない。
+    cuBLAS・cuBLASLt・cudart は、ORT と同じ 1 組(OhanamiCudaRuntime.targets)で、ここでは足さない。
+    llama-server.exe の SHA-256 と version の出力は、実行時に確かめる(docs/adr/0020-model-pinning-and-verification.md)。隣の DLL は、配布物を作るときに
+    許可の表(tools/release/allowed-files.tsv)の SHA-256 と突き合わせる(tools/release/Publish-Release.ps1)。
+  -->
+  <ItemGroup>
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)llama-server.exe" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)llama-server-impl.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)llama-common.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)llama.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)mtmd.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-base.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cuda.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)libomp.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-alderlake.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-cannonlake.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-cascadelake.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-cooperlake.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-haswell.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-icelake.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-ivybridge.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-piledriver.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-sandybridge.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-sapphirerapids.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-skylakex.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-sse42.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-x64.dll" />
+    <OhanamiLlamaFile Include="$(OhanamiLlamaDir)ggml-cpu-zen4.dll" />
+
+    <Content Include="@(OhanamiLlamaFile)" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CheckOhanamiLlamaFiles" BeforeTargets="BeforeBuild;AssignTargetPaths">
+    <Error Condition="!Exists('%(OhanamiLlamaFile.FullPath)')"
+           Text="llama-server の一式のファイルが無い: %(OhanamiLlamaFile.FullPath)。コピー元は $(OhanamiLlamaDir) (環境変数 OHANAMI_RUNTIME_DIR で切り替えられる)。" />
+  </Target>
+
+</Project>

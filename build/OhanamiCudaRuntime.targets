@@ -1,0 +1,47 @@
+<Project>
+
+  <!--
+    CUDA / cuDNN の DLL を exe の隣にコピーする。App と、GPU のテスト(Ohanami.Core.Tests。OHANAMI_GPU_TESTS=1 のとき)が共有する。
+    開発のビルドと配布(publish)で、置き方は同じ(平らに、exe の隣)。
+    NuGet の ORT には含まれないので、リポジトリ外の runtime/ (git 管理外)から名前を 1 つずつ指定してコピーする。ワイルドカードは使わない。
+    コピー元が 1 つでも無ければビルドを失敗させる(黙って足りないまま作らない。足りないと PATH の CUDA Toolkit に隠れて、別の PC で初めて壊れる)。
+
+    cuDNN は、実行時に読まれる 7 個だけ(docs/adr/0016-cudnn-dll-set.md)。NativeSelfCheck.RequiredFiles と同じ集合で、
+    片方だけを変えると、ビルドが通っても起動が止まる(または、足りないまま動く)ので、同じ変更で両方を直す(DistributionLayoutTests が突き合わせる)。
+
+    コピー元の場所:
+      既定               = リポジトリの runtime/
+      環境変数で切り替え = OHANAMI_RUNTIME_DIR(runtime/ に当たるディレクトリ。git worktree では runtime/ が無いので、これで本体の runtime/ を指す)
+      cuDNN の版のディレクトリ名は OhanamiCudnnVersionDir で変えられる(既定 9.28.0.42_cuda13)
+  -->
+  <PropertyGroup>
+    <OhanamiRuntimeDir Condition="'$(OHANAMI_RUNTIME_DIR)' != ''">$([MSBuild]::EnsureTrailingSlash('$(OHANAMI_RUNTIME_DIR)'))</OhanamiRuntimeDir>
+    <OhanamiRuntimeDir Condition="'$(OhanamiRuntimeDir)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'runtime'))</OhanamiRuntimeDir>
+    <OhanamiCudnnVersionDir Condition="'$(OhanamiCudnnVersionDir)' == ''">9.28.0.42_cuda13</OhanamiCudnnVersionDir>
+    <OhanamiLlamaDir>$(OhanamiRuntimeDir)llama.cpp\b12110\</OhanamiLlamaDir>
+    <OhanamiCudnnDir>$(OhanamiRuntimeDir)cudnn\$(OhanamiCudnnVersionDir)\</OhanamiCudnnDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CUDA ランタイム(llama.cpp の同梱物。ORT と llama-server が同じ 1 組を使う) -->
+    <OhanamiCudaFile Include="$(OhanamiLlamaDir)cudart64_13.dll" />
+    <OhanamiCudaFile Include="$(OhanamiLlamaDir)cublas64_13.dll" />
+    <OhanamiCudaFile Include="$(OhanamiLlamaDir)cublasLt64_13.dll" />
+    <!-- cuDNN(実行時に読まれる 7 個) -->
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn64_9.dll" />
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn_engines_precompiled64_9.dll" />
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn_engines_runtime_compiled64_9.dll" />
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn_engines_tensor_ir64_9.dll" />
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn_graph64_9.dll" />
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn_heuristic64_9.dll" />
+    <OhanamiCudaFile Include="$(OhanamiCudnnDir)cudnn_ops64_9.dll" />
+
+    <Content Include="@(OhanamiCudaFile)" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CheckOhanamiCudaFiles" BeforeTargets="BeforeBuild;AssignTargetPaths">
+    <Error Condition="!Exists('%(OhanamiCudaFile.FullPath)')"
+           Text="CUDA / cuDNN の DLL が無い: %(OhanamiCudaFile.FullPath)。コピー元は $(OhanamiRuntimeDir) (環境変数 OHANAMI_RUNTIME_DIR で切り替えられる。git worktree では本体の runtime/ を指す)。" />
+  </Target>
+
+</Project>

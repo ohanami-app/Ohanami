@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>S3Fts.Bench</AssemblyName>
+    <RootNamespace>S3Fts.Bench</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- 性能は Release で測る。パッケージは追加しない(S3Fts 経由の Microsoft.Data.Sqlite のみ)。 -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\S3Fts.csproj" />
+  </ItemGroup>
+
+</Project>

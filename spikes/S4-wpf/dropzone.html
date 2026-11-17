@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S4 ドロップ・貼り付けテスト</title>
+<!-- 単体のファイル。外部のリソース(スクリプト・CSS・画像・フォント)は一切読まない。 -->
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: "Yu Gothic UI", "Meiryo", sans-serif; margin: 16px; line-height: 1.5; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  #zone { border: 3px dashed #888; border-radius: 10px; padding: 36px 16px; text-align: center; font-size: 16px; margin: 12px 0; }
+  #zone.over { border-color: #2a7fff; background: rgba(42,127,255,.12); }
+  #pasteArea { border: 2px solid #888; border-radius: 8px; padding: 12px; min-height: 40px; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  th, td { border: 1px solid #888; padding: 4px 8px; font-size: 13px; text-align: left; word-break: break-all; }
+  .ok { color: #1a8f3c; font-weight: bold; }
+  .ng { color: #c62828; font-weight: bold; }
+  pre { background: rgba(128,128,128,.15); padding: 8px; overflow: auto; font-size: 12px; }
+  img.preview { max-width: 240px; max-height: 140px; margin: 4px; border: 1px solid #888; }
+</style>
+</head>
+<body>
+<h1>S4 ドロップ・貼り付けテスト</h1>
+<p>1) S4 のアプリからサムネイルをこの枠へドラッグ&ドロップ。2) 下の「ファイルを選ぶ」欄にも、同じようにドロップ。3) アプリで「画像をコピー」したあと、下の貼り付け欄をクリックして Ctrl+V。</p>
+
+<div id="zone">ここにファイルをドロップ</div>
+
+<p>ファイル選択欄(ここへのドロップも試す): <input type="file" id="picker" multiple></p>
+
+<div id="pasteArea" contenteditable="true">ここをクリックして Ctrl+V(画像・ファイルの貼り付けテスト)</div>
+
+<div id="summary"></div>
+<table id="tbl">
+  <thead><tr><th>#</th><th>名前</th><th>サイズ(バイト)</th><th>種類(type)</th><th>最終更新</th><th>経路</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div id="previews"></div>
+<h2 style="font-size:14px">dataTransfer / clipboardData の中身</h2>
+<pre id="log">(まだ何もない)</pre>
+
+<script>
+(function () {
+  "use strict";
+  var zone = document.getElementById("zone");
+  var picker = document.getElementById("picker");
+  var pasteArea = document.getElementById("pasteArea");
+  var tbody = document.querySelector("#tbl tbody");
+  var summary = document.getElementById("summary");
+  var previews = document.getElementById("previews");
+  var logEl = document.getElementById("log");
+  var total = 0;
+
+  function fmt(n) { return n.toLocaleString("ja-JP"); }
+
+  function describe(dt) {
+    var lines = [];
+    lines.push("types: " + JSON.stringify(Array.prototype.slice.call(dt.types || [])));
+    lines.push("files.length: " + (dt.files ? dt.files.length : 0));
+    if (dt.items) {
+      lines.push("items.length: " + dt.items.length);
+      for (var i = 0; i < dt.items.length; i++) {
+        lines.push("  item[" + i + "] kind=" + dt.items[i].kind + " type=" + dt.items[i].type);
+      }
+    }
+    if ("effectAllowed" in dt) lines.push("effectAllowed: " + dt.effectAllowed);
+    return lines.join("\n");
+  }
+
+  function addFiles(files, route) {
+    var n = files.length;
+    if (n === 0) {
+      summary.innerHTML = '<span class="ng">ファイルが0件(' + route + ')</span>';
+      return;
+    }
+    for (var i = 0; i < n; i++) {
+      var f = files[i];
+      total++;
+      var tr = document.createElement("tr");
+      var cells = [String(total), f.name, fmt(f.size), f.type || "(空)", f.lastModified ? new Date(f.lastModified).toLocaleString("ja-JP") : "(なし)", route];
+      cells.forEach(function (c) { var td = document.createElement("td"); td.textContent = c; tr.appendChild(td); });
+      tbody.appendChild(tr);
+      if (f.type && f.type.indexOf("image/") === 0) {
+        var img = document.createElement("img");
+        img.className = "preview";
+        img.src = URL.createObjectURL(f);   // blob: URL(外部への通信なし)
+        img.title = f.name;
+        previews.appendChild(img);
+      }
+    }
+    summary.innerHTML = '<span class="ok">' + n + ' 件を受け取った(' + route + ')。累計 ' + total + ' 件</span>';
+  }
+
+  // ブラウザが、枠の外へのドロップでファイルを開いてしまうのを防ぐ。
+  // ただしファイル選択欄(picker)へのドロップは、ブラウザの既定の動作(欄にファイルを入れる)に任せる。
+  // ここで止めると、欄にファイルが入らなくなる(最初の版の手動テストで、3 が × になった原因)
+  ["dragover", "drop"].forEach(function (ev) {
+    window.addEventListener(ev, function (e) {
+      if (e.target === picker) { return; }
+      e.preventDefault();
+    });
+  });
+
+  zone.addEventListener("dragenter", function (e) { e.preventDefault(); zone.classList.add("over"); });
+  zone.addEventListener("dragover", function (e) { e.preventDefault(); zone.classList.add("over"); logEl.textContent = "dragover\n" + describe(e.dataTransfer); });
+  zone.addEventListener("dragleave", function () { zone.classList.remove("over"); });
+  zone.addEventListener("drop", function (e) {
+    e.preventDefault();
+    zone.classList.remove("over");
+    logEl.textContent = "drop\n" + describe(e.dataTransfer);
+    addFiles(e.dataTransfer.files, "ドロップ(枠)");
+  });
+
+  picker.addEventListener("change", function () {
+    logEl.textContent = "file input change\nfiles.length: " + picker.files.length;
+    addFiles(picker.files, "ファイル選択欄(ドロップ/選択)");
+  });
+
+  pasteArea.addEventListener("paste", function (e) {
+    var cd = e.clipboardData;
+    logEl.textContent = "paste\n" + describe(cd);
+    var files = cd && cd.files ? cd.files : [];
+    if (files.length === 0) {
+      summary.innerHTML = '<span class="ng">貼り付けにファイル/画像が含まれていない(text 系のみ)</span>';
+    } else {
+      addFiles(files, "貼り付け");
+    }
+    e.preventDefault();
+  });
+})();
+</script>
+</body>
+</html>

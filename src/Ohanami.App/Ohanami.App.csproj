@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Ohanami.App</AssemblyName>
+    <RootNamespace>Ohanami.App</RootNamespace>
+    <!-- ORT などのネイティブ DLL が exe の隣に平らにコピーされる。
+         配布は self-contained にするが、ここは false のままにする: true と書くと、self-contained でないテストのプロジェクト
+         (tests/Ohanami.App.Tests が App を参照する)と合わず、NETSDK1151 で止まる。publish のときだけ、引数で指定する
+         (引数 self-contained を true にした dotnet publish。手順は tools/release/Publish-Release.ps1)。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <!-- DPI の扱いを OS 任せにせず、マニフェストで PerMonitorV2 を明示する。 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- App.xaml を使わない。起動は Program.Main に明示的に書く(AGENTS.md「すべて明示的に」)。 -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ohanami.Core\Ohanami.Core.csproj" />
+  </ItemGroup>
+
+  <!-- テスト(tests/Ohanami.App.Tests)から、internal の部品(AppPaths、FileCoreLog、ThumbnailLoader など)を直接確かめる -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ohanami.App.Tests" />
+  </ItemGroup>
+
+  <!-- CUDA / cuDNN の DLL と VC++ ランタイムの DLL と llama-server の一式を、exe の隣に平らにコピーする(開発のビルドも配布も同じ置き方)。
+       CUDA / cuDNN は build/OhanamiCudaRuntime.targets、VC++ ランタイムは build/OhanamiVcRuntime.targets(どちらも GPU のテストと共有)、llama-server は build/OhanamiLlamaServer.targets(App だけ)。 -->
+  <Import Project="..\..\build\OhanamiCudaRuntime.targets" />
+  <Import Project="..\..\build\OhanamiVcRuntime.targets" />
+  <Import Project="..\..\build\OhanamiLlamaServer.targets" />
+  <!-- 配布(publish)の出力から、実行に要らないもの(pdb・lib・TensorRT)を外す -->
+  <Import Project="..\..\build\OhanamiPublish.targets" />
+
+</Project>

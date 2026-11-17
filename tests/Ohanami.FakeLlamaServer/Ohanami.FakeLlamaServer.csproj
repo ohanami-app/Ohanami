@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- テスト用の偽の llama-server(ADR 0026)。NuGet なし。LlamaServer の起動・/health の待ち・異常終了・kill・孤児の掃除を、
+       実物(GPU で 6GB を読む)なしで確かめるために、同じ引数で起動して /health に答える小さなコンソール。
+       JobObject はソースのまま取り込み、「親を強制終了したら子が消える」を、製品と同じ実装で確かめる。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Ohanami.FakeLlamaServer</AssemblyName>
+    <RootNamespace>Ohanami.FakeLlamaServer</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Ohanami.Core\Vlm\JobObject.cs" Link="JobObject.cs" />
+  </ItemGroup>
+
+</Project>

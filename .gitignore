@@ -1,0 +1,37 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+TestResults/
+
+# ローカルデータ
+*.db
+*.db-shm
+*.db-wal
+
+# モデル・同梱バイナリ(サイズが大きいので管理外)
+models/*
+!models/MANIFEST.tsv
+/runtime/
+*.gguf
+*.onnx
+
+# スパイク用の手元画像
+spikes/**/samples/
+
+# スパイクの評価に使う手元のデータ。手元の画像から作った書き起こし・クエリ・ファイル名・埋め込み・説明文を含むので、作業ツリーには置くが Git には入れない
+/spikes/images/
+/spikes/**/runs/
+/spikes/S1-vlm/refs/
+/spikes/S1-vlm/samples*.tsv
+/spikes/S2-siglip2/known-items*.tsv
+/spikes/S2-siglip2/qrels.tsv
+/spikes/S2-siglip2/precision-*
+/spikes/S2-siglip2/reference/data/
+/spikes/S2-siglip2/template-queries/*
+!/spikes/S2-siglip2/template-queries/make-template-queries.ps1
+/spikes/S4-wpf/cache/
+/spikes/private-notes/

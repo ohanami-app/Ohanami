@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- このフォルダ配下の共通設定。spikes/ には効かせない(ルートでなく src/ と tests/ に置くのは、spikes/ のビルドの設定を変えないため)。 -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

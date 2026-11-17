@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Ohanami.Core.Tests</AssemblyName>
+    <RootNamespace>Ohanami.Core.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- ORT などのネイティブ DLL を exe の隣に平らに置く(GPU のテストが、App と同じ「アプリのディレクトリ」の形で動かせるように。ADR 0015)。
+         出力先のディレクトリ名に win-x64 は付けない。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ohanami.Core\Ohanami.Core.csproj" />
+    <!-- 偽の llama-server(LlamaServer のテスト用。exe がテストの出力に入る) -->
+    <ProjectReference Include="..\Ohanami.FakeLlamaServer\Ohanami.FakeLlamaServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+  </ItemGroup>
+
+  <!-- GPU のテスト(Category=Gpu。OHANAMI_GPU_TESTS=1 のときだけ動く手元専用)のために、CUDA / cuDNN と VC++ ランタイムの DLL もテストの exe の隣にコピーする。
+       環境変数 OHANAMI_GPU_TESTS=1 でビルドしたときだけ(通常のビルドは runtime/ を要らない)。内容は App と共有(build/OhanamiCudaRuntime.targets)。 -->
+  <Import Project="..\..\build\OhanamiCudaRuntime.targets" Condition="'$(OHANAMI_GPU_TESTS)' == '1'" />
+  <Import Project="..\..\build\OhanamiVcRuntime.targets" Condition="'$(OHANAMI_GPU_TESTS)' == '1'" />
+
+</Project>

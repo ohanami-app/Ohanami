@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Exe(コンソール付き)にしておく。ベンチの結果をシェルから見られるように。 -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>S4Wpf</AssemblyName>
+    <RootNamespace>S4Wpf</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- DPI の扱いを OS 任せにせず、マニフェストで PerMonitorV2 を明示する。 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- NuGet パッケージは使わない。WPF(WIC)の標準機能のみ。 -->
+  </PropertyGroup>
+
+</Project>

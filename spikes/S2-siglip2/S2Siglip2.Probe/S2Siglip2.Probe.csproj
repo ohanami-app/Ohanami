@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>S2Siglip2.Probe</AssemblyName>
+    <RootNamespace>S2Siglip2.Probe</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- 性能・メモリは Release で測る。パッケージは追加しない(S2Siglip2 経由の ORT と SkiaSharp だけ)。 -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\S2Siglip2\S2Siglip2.csproj" />
+    <!-- 段階3の全文検索(S3 の FtsIndex)。新しいパッケージは入らない(Microsoft.Data.Sqlite は S3 で使っている) -->
+    <ProjectReference Include="..\..\S3-fts-bigram\S3Fts.csproj" />
+  </ItemGroup>
+
+</Project>

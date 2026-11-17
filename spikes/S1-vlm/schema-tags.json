@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "ocr": { "type": "string" },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["ocr", "description", "tags"],
+  "additionalProperties": false
+}

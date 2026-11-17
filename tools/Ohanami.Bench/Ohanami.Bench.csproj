@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    検索の回帰ベンチ。製品のコードではなく、手元だけで使う道具(私物の画像と qrels に依存する)。
+    製品の SearchService を OhanamiCore 経由で呼び、known-item と precision@10 を測って、前回の結果と比べる。
+    ネイティブ DLL(ORT、CUDA、cuDNN)は、App と同じ「exe の隣に平らに置く」形にする(Core の NativeRuntime.Configure がアプリのディレクトリを見る)。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Ohanami.Bench</AssemblyName>
+    <RootNamespace>Ohanami.Bench</RootNamespace>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ohanami.Core\Ohanami.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ohanami.Bench.Tests" />
+  </ItemGroup>
+
+  <Import Project="..\..\build\OhanamiCudaRuntime.targets" />
+  <Import Project="..\..\build\OhanamiVcRuntime.targets" />
+
+</Project>

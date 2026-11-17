@@ -1,0 +1,4 @@
+# 変換したモデルの CONVERSION.json は、変換に使ったスクリプトと requirements.txt の SHA-256 を記録する。
+# どの環境で取り出しても同じバイト列(LF)になるよう、行末を固定する。
+tools/convert-siglip2/*.py text eol=lf
+tools/convert-siglip2/requirements.txt text eol=lf

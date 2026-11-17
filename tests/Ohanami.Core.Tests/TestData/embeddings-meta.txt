@@ -1,0 +1,12 @@
+{
+ "onnxruntime": "1.23.2",
+ "numpy": "2.2.6",
+ "pillow": "12.3.0",
+ "providers": [
+  "CPUExecutionProvider"
+ ],
+ "intra_op_num_threads": 4,
+ "image_count": 34,
+ "text_count": 64,
+ "dim": 1152
+}

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "ocr": { "type": "string" },
+    "description": { "type": "string" }
+  },
+  "required": ["ocr", "description"],
+  "additionalProperties": false
+}
