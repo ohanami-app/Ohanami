@@ -14,7 +14,7 @@ using Ohanami.Core.Tags;
 namespace Ohanami.App;
 
 /// <summary>
-/// 詳細画面(結果の一覧に重ねる全面の表示)。左に画像(大)、右に経路ごとの順位・テキストの欄(一致の強調)・段階の状態・情報・パス。
+/// 詳細画面(状態の行を除く窓の全面に重ねる表示。ADR 0050)。左に画像(大)、右に経路ごとの順位・テキストの欄(一致の強調)・段階の状態・情報・パス。
 /// 上に「戻る(Esc)」と位置(n / 件数)・前後(◀ ▶)。**中身の文字列は <see cref="DetailModel"/>(<see cref="DetailPresenter"/> が作る)を出すだけ**で、Core にも検索にも触らない
 /// (<see cref="ResultsPanel"/> が、開く・閉じる・前後・読み込みを持つ)。XAML も Binding も使わない。
 /// <para>操作は一覧と同じ部品を使う(<see cref="ResultsPanel"/> の実装を呼ぶ): エクスプローラーで表示、画像をコピー、ファイルとしてコピー、画像のドラッグ。</para>
@@ -80,6 +80,12 @@ internal sealed class DetailView : Grid
         // 一覧と同じ: 文字を受けないので IME を無効にする(日本語 IME がオンのままだと、E のような単体キーが IME に食われる)
         InputMethod.SetIsInputMethodEnabled(this, false);
         Visibility = Visibility.Collapsed;
+
+        // Tab・Ctrl+Tab・矢印で動くフォーカスを、詳細画面の中に閉じ込める。詳細画面は窓の全面を覆うので、閉じ込めないと、
+        // 下に隠れた左の列・検索ボックス・一覧にフォーカスが渡り、見えないものを操作してしまう(ADR 0050)
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
+        KeyboardNavigation.SetControlTabNavigation(this, KeyboardNavigationMode.Cycle);
+        KeyboardNavigation.SetDirectionalNavigation(this, KeyboardNavigationMode.Contained);
 
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

@@ -438,7 +438,7 @@ public sealed class TagEditingTests
     // ---------------------------------------------------------------- 一覧: 複数を選んで「タグを付ける」
 
     [Fact]
-    public async Task The_list_tag_button_is_enabled_only_with_a_selection_and_shows_the_count_and_the_row_is_hidden_while_the_detail_is_open()
+    public async Task The_list_tag_button_is_enabled_only_with_a_selection_and_shows_the_count_and_the_row_stays_in_place_while_the_detail_is_open()
     {
         await StaDispatcher.RunAsync(async () =>
         {
@@ -452,7 +452,7 @@ public sealed class TagEditingTests
             Assert.True(h.Panel.TagRowVisible);
 
             await h.Panel.OpenDetailAsync(H('a'));
-            Assert.False(h.Panel.TagRowVisible);                                   // 詳細画面の間は、詳細の手動タグの欄で編集する
+            Assert.True(h.Panel.TagRowVisible);                                    // 隠さない: 隠すと一覧の高さが変わる。詳細画面は、その上に重なって見えなくする
             h.Panel.CloseDetail();
             Assert.True(h.Panel.TagRowVisible);
 
