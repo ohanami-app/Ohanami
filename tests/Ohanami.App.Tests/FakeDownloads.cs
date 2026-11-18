@@ -40,7 +40,10 @@ internal sealed class FakeDownloads : IModelDownloads
     private static IEnumerable<ModelDownloadFile> Of(ModelSets set, ModelSetStatus status) =>
         status.Files.Where(f => f.State != ModelFileState.Present).Select(f => new ModelDownloadFile(set, f.RelativePath, f.ExpectedSize, f.State, 0));
 
-    public long? FreeSpace(string directory) => Free;
+    /// <summary>置き場(フォルダ)ごとの空き。指定すると <see cref="Free"/> より優先する(2 つの置き場が別のドライブのときの確かめ)。</summary>
+    public Func<string, long?>? FreeOf { get; set; }
+
+    public long? FreeSpace(string directory) => FreeOf is { } of ? of(directory) : Free;
 
     public Task<ModelDownloadSummary> RunAsync(string embeddingDirectory, string vlmDirectory, ModelSets sets, IProgress<ModelDownloadProgress> progress, CancellationToken ct)
     {

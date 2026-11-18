@@ -10,7 +10,7 @@ namespace Ohanami.App;
 
 /// <summary>
 /// セットアップの画面が使う、モデルのダウンロードの口(<see cref="ModelDownloader"/> を包む)。テストは、ネットワークに出ない偽物に替える。
-/// 取る前の見積もり(<see cref="Plan"/>・<see cref="FreeSpace"/>)は、ネットワークに出ない。取る(<see cref="RunAsync"/>)のは、利用者が「ダウンロード」を押したときだけ。
+/// 取る前の見積もり(<see cref="Plan"/>・<see cref="FreeSpace"/>)は、ネットワークに出ない。取る(<see cref="RunAsync"/>)のは、利用者が、セットアップの画面の「ダウンロード」か「2 つともダウンロード」を押したときだけ。
 /// </summary>
 internal interface IModelDownloads
 {
@@ -28,7 +28,7 @@ internal interface IModelDownloads
 
 /// <summary>
 /// 製品の実装。**ダウンロードを始める呼び出し(<c>ModelDownloader</c> を作って、取る)は、アプリの中でここの 1 か所だけ**(NetworkBoundaryGuardTests が見張る。
-/// 呼ぶのは、セットアップの画面の「ダウンロード」のボタンだけ)。
+/// 呼ぶのは、セットアップの画面の、「ダウンロード」と「2 つともダウンロード」のボタンだけ)。
 /// </summary>
 internal sealed class SystemModelDownloads(ICoreLog log) : IModelDownloads
 {

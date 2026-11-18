@@ -203,12 +203,12 @@ public sealed class SetupProgressTests
         new(kind, "Core のメッセージ(テスト)。" + new string('長', 80), file, status, host, 4_646_000_000, 2_100_000_000);
 
     /// <summary>場面の全部(組・押す前・取っている最中の各段階・失敗の全種類・中止・空きが足りない・続き)の窓の高さを集める。名前は、どの場面かを言う。</summary>
-    private static async Task<List<(string Name, double Height)>> HeightsAsync(Func<SetupState> state, ModelSets first, ModelSets second)
+    private static async Task<List<(string Name, double Height)>> HeightsAsync(Func<SetupState> state, params ModelSets[] keys)
     {
         var heights = new List<(string, double)>();
         void Add(string name, SetupWindow w) => heights.Add((name, ContentHeight(w)));
 
-        foreach (ModelSets sets in new[] { first, second })
+        foreach (ModelSets sets in keys)
         {
             string tag = sets + ": ";
 
@@ -273,7 +273,7 @@ public sealed class SetupProgressTests
     private static void AssertSameHeight(List<(string Name, double Height)> heights, string state)
     {
         double first = heights[0].Height;
-        Assert.True(heights.Count > 40, $"場面が少ない({heights.Count})");
+        Assert.True(heights.Count > 20, $"場面が少ない({heights.Count})");
         foreach ((string name, double h) in heights)
             Assert.True(Math.Abs(h - first) < 0.001, $"{state}: 「{name}」の窓の高さ {h} が、最初の場面「{heights[0].Name}」の {first} と違う");
     }
@@ -282,21 +282,21 @@ public sealed class SetupProgressTests
     public async Task The_window_height_is_the_same_in_every_scene_when_both_models_are_missing()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.BothMissing, ModelSets.FeatureVector, ModelSets.Vlm), "両方が未取得"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.BothMissing, ModelSets.FeatureVector, ModelSets.Vlm, SetupWindow.BothSets), "両方が未取得"));
     }
 
     [Fact]
     public async Task The_window_height_is_the_same_in_every_scene_when_only_the_text_search_model_is_missing()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.VlmOnlyMissing, ModelSets.Vlm, ModelSets.Vlm), "テキスト検索のモデルだけが未取得"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.VlmOnlyMissing, ModelSets.Vlm), "テキスト検索のモデルだけが未取得"));
     }
 
     [Fact]
     public async Task The_window_height_is_the_same_in_every_scene_when_a_file_has_the_wrong_size()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.WithMismatch, ModelSets.FeatureVector, ModelSets.Vlm), "大きさの違うファイルがある"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.WithMismatch, ModelSets.FeatureVector, ModelSets.Vlm, SetupWindow.BothSets), "大きさの違うファイルがある"));
     }
 
     [Fact]
@@ -307,15 +307,28 @@ public sealed class SetupProgressTests
             var fake = new FakeDownloads();
             SetupState current = SetupWindowTests.BothMissing();
             SetupWindow w = SetupWindowTests.NewWindow(current, () => current, downloads: fake);
-            double[] areas = AreaHeights(w);
-            Assert.Equal([SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight], areas);
+            double[] three = [SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight];   // 「2 つとも」+ 区画ごとの 2 つ
+            Assert.Equal(three, AreaHeights(w));
 
             Task run = w.StartDownloadAsync(ModelSets.FeatureVector);
             fake.Report(P(ModelDownloadPhase.Downloading, EmbeddingFiles[0], 0, 1_000_000_000));
-            Assert.Equal([SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight], AreaHeights(w));
+            Assert.Equal(three, AreaHeights(w));
             fake.Fail(Fail(ModelDownloadFailure.HttpStatus, status: 404, host: "cdn.example.test"));
             await run;
-            Assert.Equal([SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight], AreaHeights(w));
+            Assert.Equal(three, AreaHeights(w));
+
+            // 「2 つとも」を取っているとき・中止のあと(文の出る領域が「2 つとも」)
+            Task both = w.StartDownloadAsync(SetupWindow.BothSets);
+            fake.Report(P(ModelDownloadPhase.Downloading, EmbeddingFiles[0], 0, 1_000_000_000));
+            Assert.Equal(three, AreaHeights(w));
+            ButtonOf(w, SetupWords.CancelLabel).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            await both;
+            Assert.Equal(three, AreaHeights(w));
+
+            // VLM だけ残った窓(特徴ベクトル検索のモデルがそろった)では、領域は 1 つ
+            current = SetupWindowTests.VlmOnlyMissing();
+            w.Recheck(manual: false);
+            Assert.Equal([SetupWindow.DownloadAreaHeight], AreaHeights(w));
         });
     }
 

@@ -775,6 +775,30 @@ public sealed class ModelDownloaderTests
     }
 
     [Fact]
+    public void Taking_both_sets_in_one_call_goes_through_the_feature_vector_model_first_and_then_the_text_search_model()
+    {
+        // セットアップの画面の「2 つともダウンロード」は、組を 1 回の呼び出しで渡す。画面が「特徴ベクトル検索のモデルから先に取ります」と言う順は、ここで決まる
+        using var dir = new TempDirectory();
+
+        List<DownloadItem> items = ModelDownloader.BuildItems(dir.File("e"), dir.File("v"), ModelSets.FeatureVector | ModelSets.Vlm);
+        ModelDownloadPlan plan = ModelDownloader.Plan(dir.File("e"), dir.File("v"), ModelSets.FeatureVector | ModelSets.Vlm);
+
+        ModelSets[] expected = [.. Enumerable.Repeat(ModelSets.FeatureVector, 4), .. Enumerable.Repeat(ModelSets.Vlm, 2)];
+        Assert.Equal(expected, items.Select(i => i.Set));
+        Assert.Equal(expected, plan.Files.Select(f => f.Set));
+    }
+
+    [Fact]
+    public void The_two_catalogs_have_no_file_with_the_same_relative_path()
+    {
+        // セットアップの画面は、取り終えたファイルを、モデルのフォルダからの相対パスだけで覚える(「2 つとも」でも、どちらの組のファイルかを取り違えないため)
+        string[] embedding = [.. ModelCatalog.Current.Files.Select(f => f.RelativePath)];
+        string[] vlm = [VlmCatalog.Current.Gguf.RelativePath, VlmCatalog.Current.Mmproj.RelativePath];
+
+        Assert.Empty(embedding.Intersect(vlm, StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Both_commits_are_real_forty_digit_commits_and_the_siglip2_one_is_the_uploaded_commit()
     {
         // ネットワークには出ない(コミットが、取得元に実在することは、ここでは確かめない)

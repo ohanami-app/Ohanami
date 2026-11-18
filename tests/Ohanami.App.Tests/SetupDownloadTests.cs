@@ -9,7 +9,7 @@ namespace Ohanami.App.Tests;
 
 /// <summary>
 /// セットアップの画面の、ダウンロード。偽のダウンロードの口(<see cref="FakeDownloads"/>)で動かす(ネットワークには出ない)。確かめること:
-/// 押す前は何も取らず、何を・どこから・何 GB・空きを言う / 押すと 1 つずつ取る(進み具合・中止・ほかのボタンは押せない) / 終わったら自動で確かめ直す /
+/// 押す前は何も取らず、何を・どこから・何 GB・空きを言う / 押すと、押した領域の組を取る(進み具合・中止・ほかのボタンは押せない。区画ごとの取り方。「2 つとも」は SetupDownloadBothTests) / 終わったら自動で確かめ直す /
 /// 失敗は種類ごとの文と手で置く方法 / 中止は途中までを残す / 取っている最中に閉じようとすると確かめる。
 /// </summary>
 public sealed class SetupDownloadTests
@@ -36,6 +36,7 @@ public sealed class SetupDownloadTests
             Assert.Contains(texts, t => t.StartsWith("押すと、Hugging Face から 2 ファイル (合計 6.19 GB)", StringComparison.Ordinal));
             Assert.Contains("ダウンロード (4.58 GB)", w.EnabledButtonTextsForTests());
             Assert.Contains("ダウンロード (6.19 GB)", w.EnabledButtonTextsForTests());
+            Assert.Single(w.EnabledButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 「2 つともダウンロード」は、区画ごとのボタンとは別(中身は SetupDownloadBothTests)
             Assert.Contains(SetupWords.Promise, texts);   // 約束の文は、ダウンロードのボタンの近くに出る
             return Task.CompletedTask;
         });
@@ -65,6 +66,8 @@ public sealed class SetupDownloadTests
 
             Assert.Contains(w.TextsForTests(), t => t.StartsWith("空きが足りません: 要るのは 4.65 GB、置き場のドライブ (C:", StringComparison.Ordinal));
             Assert.DoesNotContain(w.EnabledButtonTextsForTests(), b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal));
+            Assert.Single(w.ButtonTextsForTests(), SetupWindowTests.IsBothButton);                 // 「2 つとも」は出ていて、
+            Assert.DoesNotContain(w.EnabledButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 押せない
             return Task.CompletedTask;
         });
     }
@@ -77,6 +80,7 @@ public sealed class SetupDownloadTests
             SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: new FakeDownloads());
 
             Assert.Single(w.ButtonTextsForTests(), b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal));
+            Assert.DoesNotContain(w.ButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 片方がそろっていれば、「2 つとも」の領域は無い
             return Task.CompletedTask;
         });
     }
@@ -113,6 +117,7 @@ public sealed class SetupDownloadTests
             Assert.Contains(SetupWords.Starting, w.TextsForTests());
             // 取っている間は、もう一方のボタン・確かめ直す・このまま始めるは押せない。中止と終了は押せる
             Assert.DoesNotContain(w.EnabledButtonTextsForTests(), b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal));
+            Assert.DoesNotContain(w.EnabledButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 「2 つとも」も押せない
             Assert.DoesNotContain(SetupWords.RecheckLabel, w.EnabledButtonTextsForTests());
             Assert.Contains(SetupWords.CancelLabel, w.EnabledButtonTextsForTests());
             Assert.Contains(SetupWords.ExitLabel, w.EnabledButtonTextsForTests());
@@ -217,6 +222,7 @@ public sealed class SetupDownloadTests
             Assert.Contains(SetupWords.HeadingVlmMissing, w.TextsForTests());
             Assert.Contains(SetupWords.ContinueLabel, w.EnabledButtonTextsForTests());
             Assert.Contains("ダウンロード (6.19 GB)", w.EnabledButtonTextsForTests());
+            Assert.DoesNotContain(w.ButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 片方がそろったので、「2 つとも」の領域は消える
             Assert.Contains(SetupWords.RecheckLabel, w.EnabledButtonTextsForTests());
         });
     }
@@ -241,6 +247,7 @@ public sealed class SetupDownloadTests
             Assert.Contains(w.HintsForTests(), t => t.StartsWith("ダウンロードできませんでした: ", StringComparison.Ordinal) && t.Contains("\n詳細: Core のメッセージ", StringComparison.Ordinal));   // 詳細は、失敗の行のヒントで読む
             Assert.False(w.IsDownloading);
             Assert.Equal(2, w.EnabledButtonTextsForTests().Count(b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal)));   // 押し直せる
+            Assert.Single(w.EnabledButtonTextsForTests(), SetupWindowTests.IsBothButton);                                                     // 「2 つとも」も押せる
         });
     }
 

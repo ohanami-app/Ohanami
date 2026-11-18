@@ -24,7 +24,7 @@ public sealed class NetworkBoundaryGuardTests
 {
     private const string Downloader = "ModelDownloader.cs";
 
-    /// <summary>ダウンロードを始める呼び出しの 1 か所(アプリの、セットアップの画面の口の製品の実装。呼ぶのは、画面の「ダウンロード」のボタンだけ)。</summary>
+    /// <summary>ダウンロードを始める呼び出しの 1 か所(アプリの、セットアップの画面の口の製品の実装。呼ぶのは、画面の「ダウンロード」と「2 つともダウンロード」のボタンだけ)。</summary>
     private const string AppDownloads = "ModelDownloads.cs";
 
     /// <summary>(検出する式, その式を使ってよいファイル名, 理由)。表に無いファイルが使えば違反。</summary>

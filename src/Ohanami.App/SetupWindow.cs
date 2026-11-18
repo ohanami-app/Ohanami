@@ -18,10 +18,18 @@ namespace Ohanami.App;
 /// モデルごとに、要るファイルの一覧(名前・大きさ・状態)・置き場・入手先を見せる。ファイルは、手で置く(「フォルダを開く」と「確かめ直す」)か、「ダウンロード」で取る。
 /// <list type="bullet">
 /// <item><b>ダウンロード</b>: 押す前に、何を・どこから・どこへ・空きがどれだけかを、1 行で言う(<see cref="IModelDownloads.Plan"/>。ネットワークには出ない)。押したときだけ取る。
-///   取るのは 1 つずつ(取っている間は、もう一方のボタンも「確かめ直す」も「このまま始める」も押せない)。進み具合(段階・ファイル・済み / 総量・速さ・残り)と「中止」を出す。
-///   中止しても途中までのファイルは残り、次に続きから取る。失敗は、種類ごとの平らな文と、手で置く方法の案内。終わったら自動で確かめ直す。
+///   ダウンロードの領域は 3 つある: 区画ごとの領域(特徴ベクトル検索のモデル・テキスト検索のモデル)と、導入の文の下の「2 つともダウンロード」の領域
+///   (どちらの区画もそろっていないときだけ出る)。領域は、取る組(<see cref="BothSets"/> など)を鍵にする。
+///   「2 つとも」は、組を 1 回の呼び出しで渡す(Core が、特徴ベクトル検索のモデル → テキスト検索のモデルの順に取り、空きをドライブごとの合計で先に見て、
+///   スリープの抑止・中止・失敗を 1 つにまとめ、進み具合を全ファイルの通しで出す)。区画ごとの取得を 2 回呼ぶ形にすると、
+///   1 つ目の中止・失敗・「終了」のあとに、2 つ目が押していないのに始まるので採らない。
+///   取っている間は、押した領域に進み具合(段階・ファイル・済み / 総量・速さ・残り)と「中止」を出し、ほかのダウンロードのボタンも「確かめ直す」も「このまま始める」も押せない。
+///   中止しても途中までのファイルは残り(ファイルごとの .part なので、どの領域からでも次は続きから取る)、失敗は、種類ごとの平らな文と、手で置く方法の案内。終わったら自動で確かめ直す。
+///   失敗・中止の文を出す領域は、止まった時点で 1 回だけ決める(<see cref="AreaAfterStop"/>)。確かめ直すたびには決め直さない
+///   (「2 つとも」のテキスト検索のモデルの途中で止まると、確かめ直した画面に「2 つとも」の領域は無く、文の行き場がなくなるため)。
 ///   取っている間は、ファイルを取り終えて置くたびに、その行の状態を「あり」に替え、区画の見出しの数を減らす(いま取っている行は「取得中」「確かめ中」)。
-///   この領域の高さは、場面(押す前・取っている最中・失敗・中止・空きが足りない)によらず一定(<see cref="DownloadAreaHeight"/>)。窓の高さが、取っている間に伸び縮みしない。
+///   取っていない領域は、その組(のどちらか)がそろったら、中身を消す(押せない「ダウンロード」を残さない。高さは残す)。
+///   どの領域も、高さは、場面(押す前・取っている最中・失敗・中止・空きが足りない)によらず一定(<see cref="DownloadAreaHeight"/>)。窓の高さが、取っている間に伸び縮みしない。
 ///   入りきらない文は、末尾を「…」で切って、全文を行のヒントで見せる。</item>
 /// <item>窓が前に出たとき(エクスプローラーから戻ったとき)も、自動で確かめ直す(取っている間は確かめない)。そろったら、結果(<see cref="Choice"/>)を <see cref="SetupChoice.Ready"/> にして閉じる。</item>
 /// <item>テキスト検索のモデルだけが無いときは、「このまま始める」で、<see cref="SetupChoice.WithoutVlm"/> を返して閉じる。窓を閉じる(✕・終了)と、アプリを終了する(<see cref="SetupChoice.Exit"/>)。
@@ -39,19 +47,25 @@ internal sealed class SetupWindow : Window
     private SetupState _state;
 
     // ---- ダウンロードの状態(UI スレッドだけが触る)
-    private ModelSets? _active;                         // いま取っている組(取っていなければ null)
+    /// <summary>「2 つともダウンロード」で取る組。この組は、その領域の鍵にもなる。</summary>
+    internal const ModelSets BothSets = ModelSets.FeatureVector | ModelSets.Vlm;
+
+    private ModelSets? _active;                         // いま取っている組(取っていなければ null。「2 つとも」のときは BothSets)
     private CancellationTokenSource? _cts;
     private bool _pendingClose;                         // 取っている最中に閉じると言われた(中止が済んだら閉じる)
-    private (ModelSets Set, ModelDownloadException Error)? _failure;   // 直近の失敗(その組の区画に出す)
-    private ModelSets? _cancelledSet;                   // 直近に中止した組
+    private (ModelSets Area, ModelDownloadException Error)? _failure;   // 直近の失敗(Area の領域に出す。止まった時点で決める)
+    private ModelSets? _cancelledArea;                  // 直近に中止したときの、文を出す領域(止まった時点で決める)
     private ModelDownloadProgress? _lastProgress;
     private TransferRate _rate = new();
     private TextBlock? _progressLine, _amountLine;
     private ProgressBar? _bar;
     private Button? _cancelButton;
-    private readonly HashSet<string> _completed = new(StringComparer.Ordinal);   // 今回の取得で、取り終えて置き場に置いたファイル(いま取っている組の)
+    // 今回の取得で、取り終えて置き場に置いたファイル(いま取っている組の)。名前(モデルのフォルダからの相対パス)だけで持つ。
+    // 2 つのカタログに同じ相対パスは無い(ModelDownloaderTests が見張る)ので、「2 つとも」でも、どちらの組のファイルかを取り違えない
+    private readonly HashSet<string> _completed = new(StringComparer.Ordinal);
     private readonly Dictionary<(ModelSets Set, string File), TextBlock> _fileStateCells = [];
     private readonly Dictionary<ModelSets, TextBlock> _setStateCells = [];
+    private readonly Dictionary<ModelSets, (StackPanel Text, Grid Buttons)> _areaParts = [];   // ダウンロードの領域の、文の段とボタンの行(鍵 = 領域の組)
 
     /// <summary>窓を閉じたあとの結果。既定は終了(✕ で閉じた場合も)。</summary>
     public SetupChoice Choice { get; private set; } = SetupChoice.Exit;
@@ -118,6 +132,9 @@ internal sealed class SetupWindow : Window
     /// <summary>取っている最中か(テスト用)。</summary>
     internal bool IsDownloading => _active is not null;
 
+    /// <summary>この組を、いま取っているか(「2 つとも」を取っているときは、どちらの組も取っている)。</summary>
+    private bool IsTaking(ModelSets sets) => _active is { } active && active.HasFlag(sets);
+
     /// <summary>窓の中の文字を、上から順に集める(テスト用)。</summary>
     internal string[] TextsForTests() => Walk(_body).ToArray();
 
@@ -136,6 +153,18 @@ internal sealed class SetupWindow : Window
 
     /// <summary>窓の中の文字のヒント(ツールチップが文字のもの)を、上から順に集める(テスト用。切れた文の全文)。</summary>
     internal string[] HintsForTests() => [.. FindAll<TextBlock>(_body).Select(t => t.ToolTip).OfType<string>()];
+
+    /// <summary>ダウンロードの領域(鍵 = 領域が扱う組)があるか(テスト用)。</summary>
+    internal bool HasAreaForTests(ModelSets key) => _areaParts.ContainsKey(key);
+
+    /// <summary>ダウンロードの領域の、文の段の文字(テスト用。領域が無い・中身を消したあとは空)。</summary>
+    internal string[] AreaTextsForTests(ModelSets key) => _areaParts.TryGetValue(key, out var part) ? Walk(part.Text).ToArray() : [];
+
+    /// <summary>ダウンロードの領域の、ボタンの行のボタンの文字(テスト用)。</summary>
+    internal string[] AreaButtonsForTests(ModelSets key) => _areaParts.TryGetValue(key, out var part) ? FindAll<Button>(part.Buttons).Select(b => (string)b.Content).ToArray() : [];
+
+    /// <summary>ダウンロードの領域の、ボタンの行のボタンが押せるか(テスト用。ボタンが無ければ空)。</summary>
+    internal bool[] AreaButtonsEnabledForTests(ModelSets key) => _areaParts.TryGetValue(key, out var part) ? FindAll<Button>(part.Buttons).Select(b => b.IsEnabled).ToArray() : [];
 
     /// <summary>進みのバーの割合(テスト用。バーが出ていなければ null)。</summary>
     internal double? ProgressFraction => _bar?.Value;
@@ -184,14 +213,14 @@ internal sealed class SetupWindow : Window
     private async void OnDownloadClicked(ModelSets sets) => await StartDownloadAsync(sets);
 
     /// <summary>
-    /// <paramref name="sets"/> を取る。取っている最中は何もしない(1 つずつ)。終わったら自動で確かめ直す(そろえば、閉じて先へ進む)。
-    /// 失敗は区画に出し、中止は途中までのファイルを残す。
+    /// <paramref name="sets"/> を取る(<see cref="BothSets"/> なら、2 つとも。特徴ベクトル検索のモデルが先)。取っている最中は何もしない。
+    /// 終わったら自動で確かめ直す(そろえば、閉じて先へ進む)。失敗は <see cref="AreaAfterStop"/> の領域に出し、中止は途中までのファイルを残す。
     /// </summary>
     internal async Task StartDownloadAsync(ModelSets sets)
     {
         if (_active is not null) return;
         _failure = null;
-        _cancelledSet = null;
+        _cancelledArea = null;
         _active = sets;
         _lastProgress = null;
         _completed.Clear();
@@ -204,11 +233,11 @@ internal sealed class SetupWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _cancelledSet = sets;
+            _cancelledArea = AreaAfterStop(sets);
         }
         catch (ModelDownloadException e)
         {
-            _failure = (sets, e);
+            _failure = (AreaAfterStop(sets), e);
         }
         finally
         {
@@ -229,6 +258,19 @@ internal sealed class SetupWindow : Window
         // 置き場を読み直す(そろえば閉じる。SigLIP2 だけそろったときは、画面が「テキスト検索のモデル」の状態に替わる。
         // 失敗・中止のときも、途中までに置いたファイルが「あり」で出るように、読み直す)
         Recheck(manual: false);
+    }
+
+    /// <summary>
+    /// 失敗・中止の文を出す領域の鍵。取っていた組のうち、止まった時点でまだそろっていない組(取っている間に置いたファイルは、そろったと見る。
+    /// 呼ぶのは、取っている状態が残っている間 = catch の中)。「2 つとも」で、特徴ベクトル検索のモデルまで取れて、テキスト検索のモデルの途中で止まったときは、
+    /// テキスト検索のモデルの区画になる(確かめ直すと、特徴ベクトル検索のモデルの区画は「準備完了」になり、「2 つとも」の領域は出なくなる)。止まった時点で 1 回だけ決める。
+    /// </summary>
+    private ModelSets AreaAfterStop(ModelSets taken)
+    {
+        ModelSets left = ModelSets.None;
+        if (!Effective(ModelSets.FeatureVector, _state.Embedding).IsComplete) left |= ModelSets.FeatureVector;
+        if (!Effective(ModelSets.Vlm, _state.Vlm).IsComplete) left |= ModelSets.Vlm;
+        return taken & left;
     }
 
     /// <summary>進み具合を受ける(取る側のスレッドから呼ばれうる。画面のスレッドに移して反映する)。</summary>
@@ -315,6 +357,7 @@ internal sealed class SetupWindow : Window
         ClearProgressElements();
         _fileStateCells.Clear();
         _setStateCells.Clear();
+        _areaParts.Clear();
         _body.Children.Clear();
         bool vlmOnly = _state.Kind == SetupKind.VlmIncomplete;
 
@@ -329,6 +372,8 @@ internal sealed class SetupWindow : Window
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14),
         });
 
+        // 「2 つともダウンロード」の領域は、どちらの区画もそろっていないときだけ(片方がそろっていれば、残りの区画のボタンで足りる)
+        if (!_state.Embedding.IsComplete && !_state.Vlm.IsComplete) _body.Children.Add(BothSection());
         _body.Children.Add(Section(JobKind.Embed, _state.Embedding, ModelSets.FeatureVector));
         _body.Children.Add(Section(JobKind.Vlm, _state.Vlm, ModelSets.Vlm));
 
@@ -348,7 +393,7 @@ internal sealed class SetupWindow : Window
     /// <summary>取っている間に取り終えたファイルを「あり」と見た、組の状態(取っていない組・取っていない間は、調べたとおり)。</summary>
     private ModelSetStatus Effective(ModelSets sets, ModelSetStatus set)
     {
-        if (_active != sets || _completed.Count == 0) return set;
+        if (!IsTaking(sets) || _completed.Count == 0) return set;
         return set with { Files = [.. set.Files.Select(f => _completed.Contains(f.RelativePath) ? f with { State = ModelFileState.Present, ActualSize = f.ExpectedSize } : f)] };
     }
 
@@ -366,12 +411,23 @@ internal sealed class SetupWindow : Window
             foreach (ModelFileStatus file in effective.Files)
                 if (_fileStateCells.TryGetValue((sets, file.RelativePath), out TextBlock? cell)) ShowFileState(cell, sets, file);
         }
+
+        // 取っていない領域の組が(取っている間に)そろったら、その領域の中身を消す。押せない「ダウンロード」を残さない(高さは残す)
+        foreach ((ModelSets key, (StackPanel text, Grid buttons)) in _areaParts)
+        {
+            if (_active == key) continue;
+            bool done = (key.HasFlag(ModelSets.FeatureVector) && Effective(ModelSets.FeatureVector, _state.Embedding).IsComplete)
+                || (key.HasFlag(ModelSets.Vlm) && Effective(ModelSets.Vlm, _state.Vlm).IsComplete);
+            if (!done) continue;
+            text.Children.Clear();
+            buttons.Children.Clear();
+        }
     }
 
     /// <summary>ファイル 1 行の状態。いま取っているファイルは「取得中」「確かめ中」(太字)。取り終えたファイルは、ふつうの「あり」。</summary>
     private void ShowFileState(TextBlock cell, ModelSets sets, ModelFileStatus file)
     {
-        if (_active == sets && file.State != ModelFileState.Present && _lastProgress is { Phase: not ModelDownloadPhase.Completed } p && p.FileName == file.RelativePath)
+        if (IsTaking(sets) && file.State != ModelFileState.Present && _lastProgress is { Phase: not ModelDownloadPhase.Completed } p && p.FileName == file.RelativePath)
         {
             cell.Text = SetupWords.FileStateWhileDownloading(p.Phase);
             cell.ClearValue(TextBlock.ForegroundProperty);
@@ -420,7 +476,7 @@ internal sealed class SetupWindow : Window
         if (set.SourceUrl is { } url) AddInfoRow(info, row, SetupWords.SourceLabel, url, null);
         panel.Children.Add(info);
 
-        if (!set.IsComplete) panel.Children.Add(DownloadArea(set, sets));
+        if (!set.IsComplete) panel.Children.Add(DownloadArea(sets));
 
         return new Border
         {
@@ -465,21 +521,31 @@ internal sealed class SetupWindow : Window
     }
 
     /// <summary>
-    /// 区画の下の、ダウンロードの領域。<b>高さは、場面によらず一定</b>(<see cref="DownloadAreaHeight"/>)。文の段(3 行)とボタンの行の 2 段で、場面ごとに、同じ段の中身だけを替える。
+    /// 導入の文の下の、「2 つともダウンロード」の領域(区画と同じ枠)。どちらの区画もそろっていないときだけ置く。
+    /// </summary>
+    private UIElement BothSection() => new Border
+    {
+        Child = DownloadArea(BothSets), Padding = new Thickness(14, 4, 14, 2), Margin = new Thickness(0, 0, 0, 12),
+        Background = AppColors.ListSurface, BorderBrush = AppColors.ListBorder, BorderThickness = new Thickness(1),
+    };
+
+    /// <summary>
+    /// ダウンロードの領域(区画の下と、「2 つとも」の領域。<paramref name="sets"/> は、その領域が取る組で、領域の鍵)。<b>高さは、場面によらず一定</b>(<see cref="DownloadAreaHeight"/>)。文の段(3 行)とボタンの行の 2 段で、場面ごとに、同じ段の中身だけを替える。
     /// <list type="table">
     /// <item><term>押す前</term><description>文: 見積もり(何を・どこから・どこへ・空き) / ボタン: 「ダウンロード」</description></item>
     /// <item><term>失敗の直後</term><description>文: 失敗の理由(平らな文。詳細はヒント) + 手で置く方法 / ボタン: 「ダウンロード」(押し直せる)</description></item>
     /// <item><term>中止の直後</term><description>文: 中止したことと、続きから取れること / ボタン: 「ダウンロード」</description></item>
-    /// <item><term>空きが足りない・もう一方を取っている</term><description>文: 押せない理由 / ボタン: 「ダウンロード」(押せない)</description></item>
+    /// <item><term>空きが足りない・ほかを取っている</term><description>文: 押せない理由 / ボタン: 「ダウンロード」(押せない)</description></item>
     /// <item><term>取っている最中</term><description>文: 進み具合の 2 行 + バー / ボタン: 「中止」</description></item>
     /// </list>
     /// 押す前の見積もりの文は、場面が替わって文の段から外れても、「ダウンロード」のボタンのヒントで読める。
     /// </summary>
-    private UIElement DownloadArea(ModelSetStatus set, ModelSets sets)
+    private UIElement DownloadArea(ModelSets sets)
     {
         var area = new StackPanel { Margin = new Thickness(0, 6, 0, 4), Height = DownloadAreaHeight };
         var text = new StackPanel { Height = AreaTextLines * AreaLineHeight };
         var buttons = new Grid { Height = AreaButtonRowHeight };
+        _areaParts[sets] = (text, buttons);
         area.Children.Add(text);
         area.Children.Add(buttons);
 
@@ -503,31 +569,37 @@ internal sealed class SetupWindow : Window
         }
 
         ModelDownloadPlan plan = _downloads.Plan(_state.Embedding.Directory, _state.Vlm.Directory, sets);
-        string root = Path.GetPathRoot(Path.GetFullPath(set.Directory)) ?? "";
-        long? free = _downloads.FreeSpace(set.Directory);
-        bool noSpace = !plan.IsEmpty && free is { } f && plan.RequiredFreeBytes > f;
+        // 空きは、置き場のドライブごとに見る(2 つのモデルの置き場が別のドライブのことがある。Core の取る前の確かめと同じ数え方)
+        DriveNeed[] drives = DriveNeeds(plan);
+        int lacking = Array.FindIndex(drives, d => d.Free is { } f && d.Required > f);
+        bool noSpace = lacking >= 0;
         bool otherBusy = _active is not null;
 
-        // 文の段: 場面ごとに、主の文は 1 つだけ(失敗 > 空きが足りない > もう一方を取っている > 中止 > 見積もり)。長いときは切って、全文をヒントで読む
+        // 文の段: 場面ごとに、主の文は 1 つだけ(失敗 > 空きが足りない > ほかを取っている > 中止 > 見積もり)。長いときは切って、全文をヒントで読む
         TextBlock message = AreaText(AreaTextLines - 1), extra = AreaText(1, AppColors.Secondary);
-        string? planText = plan.IsEmpty ? null : SetupWords.PlanLine(plan, free, root);
-        if (_failure is { } failure && failure.Set == sets)
+        string? planText = plan.IsEmpty ? null : SetupWords.PlanLine(plan, [.. drives.Select(d => (d.Root, d.Free))]);
+        if (_failure is { } failure && failure.Area == sets)
         {
             string line = SetupWords.FailureHead + ": " + SetupWords.FailureSummary(failure.Error);
             Say(message, line, AppColors.Warn, line + "\n" + SetupWords.FailureDetail(failure.Error));
             Say(extra, SetupWords.ManualGuidance);
         }
-        else if (noSpace) Say(message, SetupWords.NoSpaceReason(plan, free!.Value, root), AppColors.Warn);
+        else if (noSpace) Say(message, SetupWords.NoSpaceReason(drives[lacking].Required, drives[lacking].Free!.Value, drives[lacking].Root), AppColors.Warn);
         else if (otherBusy) Say(message, SetupWords.BusyReason, AppColors.Secondary);
-        else if (_cancelledSet == sets) Say(message, SetupWords.Cancelled, AppColors.Secondary);
-        else if (planText is not null) Say(message, planText, AppColors.Secondary);
+        else
+        {
+            if (_cancelledArea == sets) Say(message, SetupWords.Cancelled, AppColors.Secondary);
+            else if (planText is not null) Say(message, planText, AppColors.Secondary);
+            // 「2 つとも」は、取る順を 1 行添える(Core の順。テストが見張る)
+            if (sets == BothSets && message.Text.Length > 0) Say(extra, SetupWords.BothOrder, AppColors.Secondary);
+        }
         text.Children.Add(message);
         text.Children.Add(extra);
 
         // ボタンの行(見積もりの文が文の段に出ていない場面では、ヒントに見積もりの文を入れる)
         if (!plan.IsEmpty)
         {
-            var download = UiParts.Button(SetupWords.DownloadButton(plan), (_, _) => OnDownloadClicked(sets));
+            var download = UiParts.Button(sets == BothSets ? SetupWords.DownloadBothButton(plan) : SetupWords.DownloadButton(plan), (_, _) => OnDownloadClicked(sets));
             download.ToolTip = planText is not null && message.Text != planText ? planText + "。" + SetupWords.DownloadButtonHint : SetupWords.DownloadButtonHint;
             ToolTipService.SetShowOnDisabled(download, true);
             download.IsEnabled = !noSpace && !otherBusy;
@@ -537,6 +609,28 @@ internal sealed class SetupWindow : Window
             buttons.Children.Add(download);
         }
         return area;
+    }
+
+    /// <summary>置き場のドライブ 1 つぶん: ドライブのルート・空き(分からなければ null)・要る空き(そこに置くぶんの残り + 余裕)。</summary>
+    private readonly record struct DriveNeed(string Root, long? Free, long Required);
+
+    /// <summary>
+    /// 取るファイルを置き場のドライブごとに分けて、要る空きを数える(Core の取る前の確かめと同じ: ドライブごとに、残りの合計 + 余裕。残りが無いドライブは数えない)。
+    /// 見積もり全体の <see cref="ModelDownloadPlan.RequiredFreeBytes"/> は 1 つの合計なので、置き場が別のドライブのときは使えない。
+    /// </summary>
+    private DriveNeed[] DriveNeeds(ModelDownloadPlan plan)
+    {
+        string DirectoryOf(ModelDownloadFile f) => f.Set switch
+        {
+            ModelSets.FeatureVector => plan.EmbeddingDirectory,
+            ModelSets.Vlm => plan.VlmDirectory,
+            _ => throw new InvalidOperationException($"取るファイルの組が分からない: {f.Set}({f.RelativePath})"),
+        };
+        return [.. plan.Files
+            .GroupBy(f => Path.GetPathRoot(Path.GetFullPath(DirectoryOf(f))) ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Root: g.Key, Directory: DirectoryOf(g.First()), Remaining: g.Sum(f => f.Size - Math.Min(f.PartialBytes, f.Size))))
+            .Where(g => g.Remaining > 0)
+            .Select(g => new DriveNeed(g.Root, _downloads.FreeSpace(g.Directory), g.Remaining + ModelDownloadPlan.FreeSpaceMargin))];
     }
 
     private UIElement FileTable(ModelSetStatus set, ModelSets sets)
