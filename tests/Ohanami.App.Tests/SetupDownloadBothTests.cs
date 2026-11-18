@@ -58,14 +58,121 @@ public sealed class SetupDownloadBothTests
     }
 
     [Fact]
-    public async Task The_bulk_area_is_only_there_when_both_models_are_incomplete()
+    public async Task The_bulk_area_stays_while_either_model_is_incomplete()
     {
         await StaDispatcher.RunAsync(() =>
         {
             Assert.True(SetupWindowTests.NewWindow(SetupWindowTests.BothMissing()).HasAreaForTests(Both));
             Assert.True(SetupWindowTests.NewWindow(SetupWindowTests.WithMismatch()).HasAreaForTests(Both));
-            Assert.False(SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing()).HasAreaForTests(Both));
+            Assert.True(SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing()).HasAreaForTests(Both));
+            Assert.True(SetupWindowTests.NewWindow(SetupWindowTests.EmbeddingOnlyMissing()).HasAreaForTests(Both));
+            Assert.False(SetupWindowTests.NewWindow(SetupWindowTests.AllReady()).HasAreaForTests(Both));   // 2 つともそろっていれば、窓は出さない(出ても、確かめ直して閉じる)
             return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public async Task When_one_model_is_ready_the_bulk_area_says_so_and_takes_only_the_rest_without_the_order_line()
+    {
+        await StaDispatcher.RunAsync(() =>
+        {
+            var fake = new FakeDownloads { Free = 312_400_000_000 };
+
+            // 特徴ベクトル検索がそろって、テキスト検索が残る
+            string[] vlmLeft = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: fake).AreaTextsForTests(Both);
+            Assert.Single(vlmLeft);
+            Assert.StartsWith("特徴ベクトル検索のモデルは、そろっています。押すと、Hugging Face から残りの 2 ファイル (合計 6.19 GB) を取って、置き場に置きます。置き場のドライブ (", vlmLeft[0], StringComparison.Ordinal);
+            Assert.DoesNotContain(SetupWords.BothOrder, vlmLeft);
+            Assert.Equal(["残りをダウンロード (6.19 GB)"], SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: fake).AreaButtonsForTests(Both));
+
+            // テキスト検索がそろって、特徴ベクトル検索が残る
+            SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.EmbeddingOnlyMissing(), downloads: fake);
+            string[] embeddingLeft = w.AreaTextsForTests(Both);
+            Assert.Single(embeddingLeft);
+            Assert.StartsWith("テキスト検索のモデルは、そろっています。押すと、Hugging Face から残りの 4 ファイル (合計 4.58 GB) を取って、置き場に置きます。置き場のドライブ (", embeddingLeft[0], StringComparison.Ordinal);
+            Assert.Equal(["残りをダウンロード (4.58 GB)"], w.AreaButtonsForTests(Both));
+            Assert.Equal([true], w.AreaButtonsEnabledForTests(Both));
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public async Task A_part_left_from_the_last_time_makes_the_remaining_button_say_continue()
+    {
+        await StaDispatcher.RunAsync(() =>
+        {
+            SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: new FakeDownloads { Partial = 1_000_000_000 });
+
+            Assert.Equal(["残りを続きからダウンロード (5.19 GB)"], w.AreaButtonsForTests(Both));
+            Assert.Contains(w.AreaTextsForTests(Both), t => t.Contains("前回の続きがあるので、取るのは残りの 5.19 GB です", StringComparison.Ordinal));
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public async Task Pressing_the_bulk_button_with_one_model_left_takes_only_the_rest_and_shows_the_progress_only_in_the_bulk_area()
+    {
+        await StaDispatcher.RunAsync(async () =>
+        {
+            var fake = new FakeDownloads();
+            SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: fake);
+
+            Task run = w.StartDownloadAsync(ModelSets.Vlm, Both);   // 一括の領域のボタンと同じ呼び出し
+            fake.Report(P(ModelDownloadPhase.Downloading, VlmFiles[0], 0, 1_000_000_000, 6_190_000_000));
+
+            Assert.Equal([ModelSets.Vlm], fake.Calls);                                              // 残っている組だけを渡す
+            Assert.Equal([SetupWords.CancelLabel], w.AreaButtonsForTests(Both));                    // 進み具合と「中止」は、押した一括の領域に
+            Assert.Contains(w.AreaTextsForTests(Both), t => t.StartsWith("取得中: ", StringComparison.Ordinal));
+            Assert.Equal([SetupWords.BusyReason], w.AreaTextsForTests(ModelSets.Vlm));               // 区画の側は、押せないだけ
+            Assert.Equal([false], w.AreaButtonsEnabledForTests(ModelSets.Vlm));
+            Assert.Equal(1, w.ButtonTextsForTests().Count(b => b == SetupWords.CancelLabel));       // 進み具合が二重に出ない
+            Assert.Equal(1, w.TextsForTests().Count(t => t.StartsWith("取得中: ", StringComparison.Ordinal)));
+
+            fake.Fail(Fail(ModelDownloadFailure.Network, VlmFiles[0]));
+            await run;
+        });
+    }
+
+    [Fact]
+    public async Task Pressing_the_section_button_while_the_bulk_area_stays_shows_the_progress_in_the_section_and_blocks_the_bulk_button()
+    {
+        await StaDispatcher.RunAsync(async () =>
+        {
+            var fake = new FakeDownloads();
+            SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: fake);
+
+            Task run = w.StartDownloadAsync(ModelSets.Vlm);   // 区画のボタン
+            fake.Report(P(ModelDownloadPhase.Downloading, VlmFiles[0], 0, 1_000_000_000, 6_190_000_000));
+
+            Assert.Equal([SetupWords.CancelLabel], w.AreaButtonsForTests(ModelSets.Vlm));
+            Assert.Equal([SetupWords.BusyReason], w.AreaTextsForTests(Both));
+            Assert.Equal([false], w.AreaButtonsEnabledForTests(Both));
+            Assert.Equal(1, w.ButtonTextsForTests().Count(b => b == SetupWords.CancelLabel));
+
+            fake.Fail(Fail(ModelDownloadFailure.Network, VlmFiles[0]));
+            await run;
+            // 区画のボタンで取って止まったので、失敗の文は、その区画に出る(一括の領域には出ない)
+            Assert.Contains(w.AreaTextsForTests(ModelSets.Vlm), IsFailureLine);
+            Assert.DoesNotContain(w.AreaTextsForTests(Both), IsFailureLine);
+        });
+    }
+
+    [Fact]
+    public async Task When_the_last_model_is_done_by_its_section_button_the_bulk_area_is_cleared_too()
+    {
+        await StaDispatcher.RunAsync(async () =>
+        {
+            var fake = new FakeDownloads();
+            SetupState current = SetupWindowTests.VlmOnlyMissing();
+            SetupWindow w = SetupWindowTests.NewWindow(current, () => current, downloads: fake);
+            Task run = w.StartDownloadAsync(ModelSets.Vlm);
+
+            for (int i = 0; i < VlmFiles.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, VlmFiles[i], i, 6_190_000_000, 6_190_000_000));
+
+            Assert.Empty(w.AreaTextsForTests(Both));      // そろった組を取る一括の領域は、押せない「残りをダウンロード」を残さない
+            Assert.Empty(w.AreaButtonsForTests(Both));
+            fake.Fail(Fail(ModelDownloadFailure.Network, VlmFiles[0]));   // 後始末
+            await run;
         });
     }
 
@@ -228,7 +335,7 @@ public sealed class SetupDownloadBothTests
     }
 
     [Fact]
-    public async Task When_the_one_model_being_downloaded_is_done_the_bulk_area_is_cleared_because_it_can_no_longer_be_pressed()
+    public async Task When_the_one_model_being_downloaded_is_done_the_bulk_area_stays_for_the_rest_but_cannot_be_pressed()
     {
         await StaDispatcher.RunAsync(async () =>
         {
@@ -238,12 +345,9 @@ public sealed class SetupDownloadBothTests
             Task run = w.StartDownloadAsync(ModelSets.FeatureVector);
             string[] embedding = EmbeddingFiles;
 
-            for (int i = 0; i < embedding.Length - 1; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_000_000_000, 4_579_405_088));
-            Assert.Equal([SetupWords.BusyReason], w.AreaTextsForTests(Both));   // まだ 1 つ残っている間は、押せないだけ
-            fake.Report(P(ModelDownloadPhase.Completed, embedding[^1], embedding.Length - 1, 4_579_405_088, 4_579_405_088));
-
-            Assert.Empty(w.AreaTextsForTests(Both));
-            Assert.Empty(w.AreaButtonsForTests(Both));
+            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_579_405_088, 4_579_405_088));
+            Assert.Equal([SetupWords.BusyReason], w.AreaTextsForTests(Both));   // 区画のボタンで取っている間は、一括は押せない
+            Assert.Equal([false], w.AreaButtonsEnabledForTests(Both));
             fake.Fail(Fail(ModelDownloadFailure.Network, embedding[0]));   // 後始末
             await run;
         });
@@ -297,7 +401,7 @@ public sealed class SetupDownloadBothTests
             await run;
 
             Assert.Contains(w.AreaTextsForTests(Both), IsFailureLine);
-            Assert.Contains(SetupWords.ManualGuidance, w.AreaTextsForTests(Both));
+            Assert.Contains(SetupWords.BulkManualGuidance, w.AreaTextsForTests(Both));   // 一括の領域の案内は、短い言い方
             Assert.DoesNotContain(w.AreaTextsForTests(ModelSets.FeatureVector), IsFailureLine);
             Assert.DoesNotContain(w.AreaTextsForTests(ModelSets.Vlm), IsFailureLine);
             Assert.Equal(1, w.TextsForTests().Count(IsFailureLine));
@@ -307,7 +411,7 @@ public sealed class SetupDownloadBothTests
     }
 
     [Fact]
-    public async Task A_failure_midway_through_the_text_search_model_is_shown_in_that_section_because_the_bulk_area_is_gone()
+    public async Task A_failure_midway_through_the_text_search_model_is_shown_in_the_bulk_area_that_was_pressed()
     {
         await StaDispatcher.RunAsync(async () =>
         {
@@ -323,18 +427,20 @@ public sealed class SetupDownloadBothTests
             fake.Fail(Fail(ModelDownloadFailure.HttpStatus, vlm[0]));
             await run;
 
-            Assert.False(w.HasAreaForTests(Both));   // 確かめ直した画面に、「2 つとも」の領域は無い
-            Assert.Contains(w.AreaTextsForTests(ModelSets.Vlm), IsFailureLine);
-            Assert.Contains(w.AreaTextsForTests(ModelSets.Vlm), t => t.Contains(vlm[0], StringComparison.Ordinal));
-            Assert.Contains(SetupWords.ManualGuidance, w.AreaTextsForTests(ModelSets.Vlm));
+            Assert.True(w.HasAreaForTests(Both));   // 確かめ直した画面にも、一括の領域は残っている(残りを取る)
+            Assert.Contains(w.AreaTextsForTests(Both), IsFailureLine);
+            Assert.Contains(w.AreaTextsForTests(Both), t => t.Contains(vlm[0], StringComparison.Ordinal));
+            Assert.Contains(SetupWords.BulkManualGuidance, w.AreaTextsForTests(Both));
+            Assert.DoesNotContain(w.AreaTextsForTests(ModelSets.Vlm), IsFailureLine);   // 区画には出ない(文は 1 か所)
             Assert.Equal(1, w.TextsForTests().Count(IsFailureLine));
             Assert.Equal([Both], fake.Calls);
-            Assert.Single(w.EnabledButtonTextsForTests(), b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal));   // 残りの区画から、押し直せる
+            Assert.Equal(["残りをダウンロード (6.19 GB)"], w.AreaButtonsForTests(Both));   // 残りだけを、押し直せる
+            Assert.Equal([true], w.AreaButtonsEnabledForTests(Both));
         });
     }
 
     [Fact]
-    public async Task A_cancel_midway_through_the_text_search_model_is_said_in_that_section()
+    public async Task A_cancel_midway_through_the_text_search_model_is_said_in_the_bulk_area_that_was_pressed()
     {
         await StaDispatcher.RunAsync(async () =>
         {
@@ -350,8 +456,9 @@ public sealed class SetupDownloadBothTests
             SetupWindowTests.Click(SetupWindowTests.ButtonOf(w, SetupWords.CancelLabel));
             await run;
 
-            Assert.Contains(SetupWords.Cancelled, w.AreaTextsForTests(ModelSets.Vlm));
-            Assert.Equal([Both], fake.Calls);
+            Assert.Contains(SetupWords.Cancelled, w.AreaTextsForTests(Both));
+            Assert.DoesNotContain(SetupWords.Cancelled, w.AreaTextsForTests(ModelSets.Vlm));
+            Assert.Equal([Both], fake.Calls);   // 中止のあと、取り直さない
         });
     }
 
@@ -386,5 +493,7 @@ public sealed class SetupDownloadBothTests
     {
         Assert.Equal("特徴ベクトル検索のモデルから先に取ります", SetupWords.BothOrder);
         Assert.Equal("ダウンロードしている間は、押せません", SetupWords.BusyReason);
+        Assert.Equal("手で置くときは、各区画の置き場に置いて「確かめ直す」を押してください", SetupWords.BulkManualGuidance);
+        Assert.Equal("特徴ベクトル検索のモデルは、そろっています。", SetupWords.BulkReadyNote(JobKind.Embed));
     }
 }

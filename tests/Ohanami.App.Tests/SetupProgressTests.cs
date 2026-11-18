@@ -202,6 +202,11 @@ public sealed class SetupProgressTests
     private static ModelDownloadException Fail(ModelDownloadFailure kind, string? file = "textual/model.onnx_data", int? status = null, string? host = null) =>
         new(kind, "Core のメッセージ(テスト)。" + new string('長', 80), file, status, host, 4_646_000_000, 2_100_000_000);
 
+    /// <summary>領域の鍵から、取る組を決める(一括の領域は、まだそろっていない組)。</summary>
+    private static ModelSets Taken(SetupState state, ModelSets key) =>
+        key != SetupWindow.BothSets ? key
+            : (state.Embedding.IsComplete ? ModelSets.None : ModelSets.FeatureVector) | (state.Vlm.IsComplete ? ModelSets.None : ModelSets.Vlm);
+
     /// <summary>場面の全部(組・押す前・取っている最中の各段階・失敗の全種類・中止・空きが足りない・続き)の窓の高さを集める。名前は、どの場面かを言う。</summary>
     private static async Task<List<(string Name, double Height)>> HeightsAsync(Func<SetupState> state, params ModelSets[] keys)
     {
@@ -228,7 +233,7 @@ public sealed class SetupProgressTests
             // 取っている最中: 各段階 × ファイル(長いファイル名)
             var fake = new FakeDownloads();
             SetupWindow w = SetupWindowTests.NewWindow(state(), state, downloads: fake);
-            Task run = w.StartDownloadAsync(sets);
+            Task run = w.StartDownloadAsync(Taken(state(), sets), sets);
             Add(tag + "取っている最中・始めたばかり", w);
             foreach (ModelDownloadPhase phase in Enum.GetValues<ModelDownloadPhase>())
                 foreach (string file in new[] { "visual/model.onnx", "textual/model.onnx_data", "a-very-long-file-name-for-layout-measurement/with/deep/folders/model-00001-of-00009.gguf" })
@@ -251,7 +256,7 @@ public sealed class SetupProgressTests
                 {
                     var f = new FakeDownloads();
                     SetupWindow fw = SetupWindowTests.NewWindow(state(), state, downloads: f);
-                    Task r = fw.StartDownloadAsync(sets);
+                    Task r = fw.StartDownloadAsync(Taken(state(), sets), sets);
                     f.Fail(Fail(kind, file, status, host));
                     await r;
                     Add(tag + $"失敗・{kind}・{label}", fw);
@@ -260,7 +265,7 @@ public sealed class SetupProgressTests
             // 中止
             var cf = new FakeDownloads();
             SetupWindow cw = SetupWindowTests.NewWindow(state(), state, downloads: cf);
-            Task cr = cw.StartDownloadAsync(sets);
+            Task cr = cw.StartDownloadAsync(Taken(state(), sets), sets);
             cf.Report(new ModelDownloadProgress(ModelDownloadPhase.Downloading, "visual/model.onnx", 0, 4, 1, EmbeddingTotal));
             ButtonOf(cw, SetupWords.CancelLabel).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             Add(tag + "中止している最中", cw);
@@ -289,7 +294,14 @@ public sealed class SetupProgressTests
     public async Task The_window_height_is_the_same_in_every_scene_when_only_the_text_search_model_is_missing()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.VlmOnlyMissing, ModelSets.Vlm), "テキスト検索のモデルだけが未取得"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.VlmOnlyMissing, ModelSets.Vlm, SetupWindow.BothSets), "テキスト検索のモデルだけが未取得"));
+    }
+
+    [Fact]
+    public async Task The_window_height_is_the_same_in_every_scene_when_only_the_feature_vector_model_is_missing()
+    {
+        await StaDispatcher.RunAsync(async () =>
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.EmbeddingOnlyMissing, ModelSets.FeatureVector, SetupWindow.BothSets), "特徴ベクトル検索のモデルだけが未取得"));
     }
 
     [Fact]
@@ -325,10 +337,10 @@ public sealed class SetupProgressTests
             await both;
             Assert.Equal(three, AreaHeights(w));
 
-            // VLM だけ残った窓(特徴ベクトル検索のモデルがそろった)では、領域は 1 つ
+            // VLM だけ残った窓(特徴ベクトル検索のモデルがそろった)では、領域は一括と VLM の 2 つ
             current = SetupWindowTests.VlmOnlyMissing();
             w.Recheck(manual: false);
-            Assert.Equal([SetupWindow.DownloadAreaHeight], AreaHeights(w));
+            Assert.Equal([SetupWindow.BothAreaHeight, SetupWindow.DownloadAreaHeight], AreaHeights(w));   // 一括の領域は出しっぱなし
         });
     }
 

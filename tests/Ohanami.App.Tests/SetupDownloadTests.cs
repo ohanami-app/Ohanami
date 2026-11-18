@@ -80,7 +80,7 @@ public sealed class SetupDownloadTests
             SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: new FakeDownloads());
 
             Assert.Single(w.ButtonTextsForTests(), b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal));
-            Assert.DoesNotContain(w.ButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 片方がそろっていれば、「2 つとも」の領域は無い
+            Assert.Single(w.ButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 片方がそろっていても、一括の領域は出ている(残りだけを取る)
             return Task.CompletedTask;
         });
     }
@@ -222,7 +222,7 @@ public sealed class SetupDownloadTests
             Assert.Contains(SetupWords.HeadingVlmMissing, w.TextsForTests());
             Assert.Contains(SetupWords.ContinueLabel, w.EnabledButtonTextsForTests());
             Assert.Contains("ダウンロード (6.19 GB)", w.EnabledButtonTextsForTests());
-            Assert.DoesNotContain(w.ButtonTextsForTests(), SetupWindowTests.IsBothButton);   // 片方がそろったので、「2 つとも」の領域は消える
+            Assert.Contains("残りをダウンロード (6.19 GB)", w.EnabledButtonTextsForTests());   // 片方がそろっても、一括の領域は残る(残りだけを取る)
             Assert.Contains(SetupWords.RecheckLabel, w.EnabledButtonTextsForTests());
         });
     }

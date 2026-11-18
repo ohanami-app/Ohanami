@@ -49,6 +49,8 @@ public sealed class SetupWindowTests
         return new SetupState(e, v);
     }
 
+    internal static SetupState EmbeddingOnlyMissing() { (ModelSetStatus e, ModelSetStatus v) = Empty(); return new SetupState(e, AllPresent(v)); }
+
     internal static SetupState AllReady() { (ModelSetStatus e, ModelSetStatus v) = Empty(); return new SetupState(AllPresent(e), AllPresent(v)); }
 
     internal static SetupWindow NewWindow(SetupState initial, Func<SetupState>? inspect = null, FakeShell? shell = null, FakeDownloads? downloads = null) =>
@@ -135,7 +137,7 @@ public sealed class SetupWindowTests
     // ---------------------------------------------------------------- ボタン
 
     /// <summary>「2 つともダウンロード」のボタンか(「ダウンロード」で始まる区画ごとのボタンとは、文字の頭が違う)。</summary>
-    internal static bool IsBothButton(string text) => text.StartsWith("2 つと", StringComparison.Ordinal);
+    internal static bool IsBothButton(string text) => text.StartsWith("2 つと", StringComparison.Ordinal) || text.StartsWith("残りを", StringComparison.Ordinal);
 
     [Fact]
     public async Task The_buttons_depend_on_the_state()
@@ -152,7 +154,7 @@ public sealed class SetupWindowTests
             Assert.Contains(SetupWords.ExitLabel, both);
             Assert.DoesNotContain(SetupWords.ContinueLabel, both);   // 特徴ベクトル検索のモデルが無いと、「このまま始める」は無い
             Assert.Equal(1, vlmOnly.Count(b => b.StartsWith(SetupWords.DownloadLabel, StringComparison.Ordinal)));   // そろっている区画には、ダウンロードは出ない
-            Assert.Equal(0, vlmOnly.Count(IsBothButton));                                                            // 片方がそろっていれば、「2 つとも」は出ない
+            Assert.Equal(1, vlmOnly.Count(IsBothButton));                                                            // 片方がそろっていても、一括(「残りをダウンロード」)は出ている
             Assert.Contains(SetupWords.ContinueLabel, vlmOnly);
             return Task.CompletedTask;
         });

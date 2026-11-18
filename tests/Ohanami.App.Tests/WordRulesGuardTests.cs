@@ -150,6 +150,13 @@ public sealed class WordRulesGuardTests
             c.Add("SetupWords.PlanLine", SetupWords.PlanLine(plan, [("C:\\", 100_000_000_000), ("Z:\\", 50_000_000_000)]));
             c.Add("SetupWords.NoSpaceReason", SetupWords.NoSpaceReason(plan.RequiredFreeBytes, 1_000_000_000, "Z:\\"));
             c.Add("SetupWords.BothOrder", SetupWords.BothOrder);
+            c.Add("SetupWords.DownloadRemainingButton", SetupWords.DownloadRemainingButton(plan));
+            foreach (JobKind ready in new[] { JobKind.Embed, JobKind.Vlm })
+            {
+                c.Add("SetupWords.BulkReadyNote", SetupWords.BulkReadyNote(ready));
+                c.Add("SetupWords.RemainingPlanLine", SetupWords.RemainingPlanLine(ready, plan, [("C:\\", 100_000_000_000)]));
+                c.Add("SetupWords.RemainingPlanLine", SetupWords.RemainingPlanLine(ready, plan, [("C:\\", null)]));
+            }
         }
         foreach (ModelDownloadPhase phase in Enum.GetValues<ModelDownloadPhase>())
         {
