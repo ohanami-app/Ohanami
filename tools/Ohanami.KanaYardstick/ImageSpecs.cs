@@ -7,16 +7,29 @@ using System.Text;
 namespace Ohanami.KanaYardstick;
 
 /// <summary>合成画像 1 枚の仕様。<see cref="Lines"/> が正解の文(ひらがなの行とカタカナの行が交互に並ぶ)。</summary>
-internal sealed record Spec(string Id, int W, int H, string Bg, int Height, string Font, int Seed, string[] Lines);
+/// <remarks><see cref="PixelSha256"/> は、gen が描いた画素(Bgr24)の SHA-256。フォントや WPF の版で画素が変わりうるので、別の環境で作った画像と数字を比べてよいかの目印にする。</remarks>
+internal sealed record Spec(string Id, int W, int H, string Bg, int Height, string Font, int Seed, string[] Lines)
+{
+    public string? PixelSha256 { get; init; }
+}
 
 /// <summary>
 /// 合成画像の仕様を、乱数の種から決める(同じ種なら同じ仕様)。画像の大きさは、画像トークンの上限 3584・下限は既定のとき、画像トークンが 500〜900 になる
 /// 大きさ(画像トークン ≒ 横 ÷ 32 × 縦 ÷ 32): 1280×720 → 約 880、1024×576 → 約 576。
-/// 文は、濁点・半濁点の付く字(24 字)と付かない字(40 字)を、意味のない並びにしたもの。単語の予測が効かない並びで、字の形だけの読み取りを測る。
+/// 文は、濁点・半濁点の付く字(25 字)と付かない字(44 字)を、意味のない並びにしたもの。単語の予測が効かない並びで、字の形だけの読み取りを測る。
 /// 背景(dark / light / busy)× 字の高さ(12・16・20・24・32 px)× 6 枚 = 90 枚。1 枚に約 120 字。
 /// </summary>
 internal static class ImageSpecs
 {
+    /// <summary>画像の束のハッシュ = 「id TAB 画素のハッシュ LF」を id の順に並べた文字列の SHA-256。1 枚でも画素が違えば変わる。画素のハッシュが無い仕様があれば例外。</summary>
+    public static string BundleSha256(IEnumerable<Spec> specs)
+    {
+        var sb = new StringBuilder();
+        foreach (Spec s in specs.OrderBy(x => x.Id, StringComparer.Ordinal))
+            sb.Append(s.Id).Append('\t').Append(s.PixelSha256 ?? throw new InvalidOperationException($"画素のハッシュが無い: {s.Id}(gen し直す)")).Append('\n');
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
     /// <summary>濁点・半濁点の付く字(ひらがな。カタカナは +0x60 で作る)。</summary>
     internal const string Voiced = "がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ";
 

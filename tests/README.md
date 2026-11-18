@@ -7,7 +7,7 @@
 | `tests/Ohanami.Core.Tests` | `Ohanami.Core` のテスト(DB、前処理、トークナイザ、検索、モデルの検証・ダウンロード、VLM の起動・停止、配布物の置き方の見張りなど)。正解データは `TestData/`(作り方は `tools/siglip2-reference/README.md`) | 通常の実行は、`models/` の `tokenizer.json` の 1 ファイルだけ(下) |
 | `tests/Ohanami.App.Tests` | `Ohanami.App` のテスト。画面を出さずに測る。文言・色・窓の作り方の決まりを、ソースを読んで見張るテストを含む | `runtime/`(App のビルドが要る。下) |
 | `tests/Ohanami.Bench.Tests` | `tools/Ohanami.Bench`(検索の回帰ベンチと採点)のテスト | `runtime/`(Bench のビルドが要る。下) |
-| `tests/Ohanami.KanaYardstick.Tests` | `tools/Ohanami.KanaYardstick`(濁点・半濁点の読み取りの尺)のテスト。画像の仕様・採点・表・描画(WPF なので STA のスレッドで呼ぶ) | 無し(`runtime/` は要らない) |
+| `tests/Ohanami.KanaYardstick.Tests` | `tools/Ohanami.KanaYardstick`(濁点・半濁点の読み取りの尺)のテスト。画像の仕様・採点・表・描画(WPF なので STA のスレッドで呼ぶ) | Windows に、游ゴシック(Yu Gothic)とメイリオ(Meiryo)が入っていること(描画のテストは、無ければ「フォントが無い」で**失敗**する)。`runtime/` は要らない |
 | `tests/Ohanami.FakeLlamaServer` | テストではない。VLM の起動・停止のテストが使う、偽の llama-server(Core.Tests が参照して、ビルドする) | |
 
 ## 最初に 1 回: 要るファイルを置く

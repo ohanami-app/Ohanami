@@ -66,6 +66,15 @@ internal static class ImageRenderer
         return rgb;
     }
 
+    /// <summary>画素(Bgr24 の行を詰めたもの)の SHA-256(16 進、小文字)。PNG の符号化の違いに依らない。</summary>
+    public static string PixelSha256(BitmapSource source)
+    {
+        int stride = (source.PixelWidth * source.Format.BitsPerPixel + 7) / 8;
+        var data = new byte[stride * source.PixelHeight];
+        source.CopyPixels(data, stride, 0);
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data));
+    }
+
     public static void SavePng(BitmapSource source, string path)
     {
         var encoder = new PngBitmapEncoder();

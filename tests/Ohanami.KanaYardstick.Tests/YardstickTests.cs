@@ -103,17 +103,34 @@ public class ScoringTests
     }
 
     [Fact]
-    public void LostAddedAndSwappedMarksAreCountedAsDakutenOnlyErrors()
+    public void LostAndSwappedMarksAreVoicedErrorsAndAnAddedMarkIsAPlainError()
     {
         Tally lost = Count("が", "か");
-        Assert.Equal((1, 1, 0, 0), (lost.Dak, lost.DakLost, lost.DakAdded, lost.DakSwap));
-        Tally added = Count("か", "が");
-        Assert.Equal((1, 0, 1, 0), (added.Dak, added.DakLost, added.DakAdded, added.DakSwap));
-        Assert.Equal(0, added.Voiced);   // 正解の字が付かない字なので、濁字には数えない
+        Assert.Equal((1, 1, 0), (lost.Dak, lost.DakLost, lost.DakSwap));
         Tally swapped = Count("ば", "ぱ");
-        Assert.Equal((1, 0, 0, 1), (swapped.Dak, swapped.DakLost, swapped.DakAdded, swapped.DakSwap));
+        Assert.Equal((1, 0, 1), (swapped.Dak, swapped.DakLost, swapped.DakSwap));
         Tally katakana = Count("ビ", "ヒ");
         Assert.Equal(1, katakana.DakLost);
+
+        // 付加(付かない字に付いた)は、濁字の誤りではなく、清音の字の誤り。濁誤(分子 Dak・母数 Voiced)には入らない
+        Tally added = Count("か", "が");
+        Assert.Equal(0, added.Dak);
+        Assert.Equal(1, added.DakAdded);
+        Assert.Equal(0, added.Voiced);
+        Assert.Equal(1, added.Plain);
+        Assert.Equal(1, added.PlainErrors);
+        Assert.Equal(1, added.Errors);
+    }
+
+    [Fact]
+    public void PlainErrorsAreOtherSubstitutionsDeletionsAndAddedMarksOnPlainCharacters()
+    {
+        Tally t = Count("かきくけ", "がたく");   // か→が(付加)、き→た(別の字)、く一致、け削除
+        Assert.Equal((1, 1, 1), (t.DakAdded, t.OtherSubPlain, t.DeletedPlain));
+        Assert.Equal(3, t.PlainErrors);
+        Assert.Equal(4, t.Plain);
+        Assert.Equal(0, t.Dak);
+        Assert.Equal(3, t.Errors);
     }
 
     [Fact]
@@ -208,7 +225,7 @@ public class ScoreReportTests : IDisposable
             ResultLine("c2", "b", "failed", null, attempts: 3),
         ]);
 
-        int code = ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2"));
+        int code = ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2", GateWithoutZu: false));
 
         Assert.Equal(0, code);
         string report = File.ReadAllText(Path.Combine(_work, "report.txt"));
@@ -220,6 +237,8 @@ public class ScoreReportTests : IDisposable
         Assert.Contains("| 5%以上 |", report, StringComparison.Ordinal);
         Assert.Contains("| はい | はい | 合 |", report, StringComparison.Ordinal);   // c1 20% ≥ 5% かつ c2 0% ≤ c1 の 1/3
         Assert.Contains("6.0 倍", report, StringComparison.Ordinal);                // 時間 15 秒 → 90 秒
+        Assert.Contains("--gate with-zu", report, StringComparison.Ordinal);        // 報告の先頭に、判定に使った率が出る
+        Assert.Contains("ぢ・づ・ヂ・ヅを含む濁字", report, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(_work, "per-image.tsv")));
         Assert.True(File.Exists(Path.Combine(_work, "alignments.txt")));
         Assert.Contains("が→か[濁]", File.ReadAllText(Path.Combine(_work, "alignments.txt")), StringComparison.Ordinal);
@@ -230,7 +249,7 @@ public class ScoreReportTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_work, "manifest.json"), JsonSerializer.Serialize(new[] { MakeSpec("a", 12, "がぎ") }));
         File.WriteAllLines(Path.Combine(_work, "results.jsonl"), [ResultLine("c1", "zzz", "ok", "がぎ")]);
-        Assert.Throws<InvalidDataException>(() => ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2")));
+        Assert.Throws<InvalidDataException>(() => ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2", GateWithoutZu: false)));
     }
 
     [Fact]
@@ -239,10 +258,42 @@ public class ScoreReportTests : IDisposable
         // 正解 ぢづがぎ。c1 は ぢづ だけ間違える
         File.WriteAllText(Path.Combine(_work, "manifest.json"), JsonSerializer.Serialize(new[] { MakeSpec("a", 12, "ぢづがぎ") }));
         File.WriteAllLines(Path.Combine(_work, "results.jsonl"), [ResultLine("c1", "a", "ok", "ちつがぎ"), ResultLine("c2", "a", "ok", "ぢづがぎ")]);
-        ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2"));
+        ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2", GateWithoutZu: false));
         string report = File.ReadAllText(Path.Combine(_work, "report.txt"));
         Assert.Contains("c1 | 全体 | 1 | 4 | 4 | 50.00 | 50.00 [", report, StringComparison.Ordinal);
         Assert.Contains("| 0.00 | 100.00 (2) |", report, StringComparison.Ordinal);   // ぢづ除く 0%、ぢづ 100%(2 字)
+    }
+
+    [Fact]
+    public void TheGateJudgesOnTheRateTheOptionNamesAndTheReportSaysWhichOne()
+    {
+        // 正解 ぢづがぎ。c1 は ぢづ だけ間違える: ぢづを含む濁誤は 50%(c2 は 0% → 合)、除く濁誤は 0%(5% 未満 → 否)
+        File.WriteAllText(Path.Combine(_work, "manifest.json"), JsonSerializer.Serialize(new[] { MakeSpec("a", 12, "ぢづがぎ") }));
+        File.WriteAllLines(Path.Combine(_work, "results.jsonl"), [ResultLine("c1", "a", "ok", "ちつがぎ"), ResultLine("c2", "a", "ok", "ぢづがぎ")]);
+
+        ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2", GateWithoutZu: false));
+        string with = File.ReadAllText(Path.Combine(_work, "report.txt"));
+        Assert.Contains("--gate with-zu", with, StringComparison.Ordinal);
+        Assert.Contains("12 | 4/4 | 50.00 [", with, StringComparison.Ordinal);
+        Assert.Contains("| はい | はい | 合 |", with, StringComparison.Ordinal);
+
+        ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2", GateWithoutZu: true));
+        string without = File.ReadAllText(Path.Combine(_work, "report.txt"));
+        Assert.Contains("--gate without-zu", without, StringComparison.Ordinal);
+        Assert.Contains("12 | 2/2 | 0.00 [", without, StringComparison.Ordinal);
+        Assert.Contains("| いいえ | はい | 否 |", without, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnAddedMarkIsCountedInThePlainErrorRateAndNotInTheVoicedErrorRate()
+    {
+        // 正解 かがきぎ(清音 2・濁字 2)。c1 は か→が(付加)だけ誤る
+        File.WriteAllText(Path.Combine(_work, "manifest.json"), JsonSerializer.Serialize(new[] { MakeSpec("a", 12, "かがきぎ") }));
+        File.WriteAllLines(Path.Combine(_work, "results.jsonl"), [ResultLine("c1", "a", "ok", "ががきぎ"), ResultLine("c2", "a", "ok", "かがきぎ")]);
+        ScoreReport.Run(new ScoreOptions(_work, 536, "c1", "c2", GateWithoutZu: false));
+        string report = File.ReadAllText(Path.Combine(_work, "report.txt"));
+        Assert.Contains("c1 | 全体 | 1 | 4 | 2 | 25.00 | 0.00 [", report, StringComparison.Ordinal);   // 濁誤 0%
+        Assert.Contains("| 50.00 |", report, StringComparison.Ordinal);                               // 清誤 = 1 ÷ 清音 2 = 50%
     }
 }
 
@@ -291,10 +342,37 @@ public class ImageRendererTests
     }
 
     [Fact]
+    public void PixelSha256_IsStableForTheSameImageAndChangesWithThePixels()
+    {
+        (string a, string b, string c) = OnSta(() =>
+        {
+            ImageRenderer.CheckFonts();
+            Spec[] specs = ImageSpecs.Build(ImageSpecs.DefaultSeed).Where(s => s.Bg == "dark" && s.Height == 24).Take(2).ToArray();
+            return (ImageRenderer.PixelSha256(ImageRenderer.Render(specs[0])), ImageRenderer.PixelSha256(ImageRenderer.Render(specs[0])), ImageRenderer.PixelSha256(ImageRenderer.Render(specs[1])));
+        });
+        Assert.Matches("^[0-9a-f]{64}$", a);
+        Assert.Equal(a, b);
+        Assert.NotEqual(a, c);
+    }
+
+    [Fact]
+    public void BundleSha256_DependsOnEveryImageAndRefusesASpecWithoutAPixelHash()
+    {
+        Spec[] specs = ImageSpecs.Build(ImageSpecs.DefaultSeed).Take(3).Select((s, i) => s with { PixelSha256 = new string((char)('a' + i), 64) }).ToArray();
+        string baseline = ImageSpecs.BundleSha256(specs);
+        Assert.Matches("^[0-9a-f]{64}$", baseline);
+        Assert.Equal(baseline, ImageSpecs.BundleSha256(specs.Reverse()));   // 並びに依らない(id で整列する)
+        Spec[] changed = [specs[0], specs[1], specs[2] with { PixelSha256 = new string('f', 64) }];
+        Assert.NotEqual(baseline, ImageSpecs.BundleSha256(changed));
+        Assert.Throws<InvalidOperationException>(() => ImageSpecs.BundleSha256([specs[0] with { PixelSha256 = null }]));
+    }
+
+    [Fact]
     public void Render_BusyBackgroundHasManyColors()
     {
         int distinct = OnSta(() =>
         {
+            ImageRenderer.CheckFonts();
             Spec spec = ImageSpecs.Build(ImageSpecs.DefaultSeed).First(s => s.Bg == "busy");
             byte[] px = Pixels(ImageRenderer.Render(spec));
             return Enumerable.Range(0, px.Length / 3).Select(i => (px[i * 3], px[i * 3 + 1], px[i * 3 + 2])).Distinct().Count();
@@ -310,6 +388,7 @@ public class ImageRendererTests
         {
             (int w, int h) = OnSta(() =>
             {
+                ImageRenderer.CheckFonts();
                 Spec spec = ImageSpecs.Build(ImageSpecs.DefaultSeed).First(s => s.Bg == "light");
                 ImageRenderer.SavePng(ImageRenderer.Render(spec), path);
                 var decoder = new PngBitmapDecoder(new Uri(path), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);

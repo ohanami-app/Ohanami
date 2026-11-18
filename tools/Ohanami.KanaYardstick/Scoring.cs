@@ -15,11 +15,17 @@ internal sealed class Tally
     /// <summary>正解のうち、濁点・半濁点の付く字(<see cref="Zu"/> を含む)。</summary>
     public int Voiced;
 
-    /// <summary>正解のうち、ぢ・づ・ヂ・ヅ。字の形の差が小さく、ほかの字より取り違えやすいので、別に数える。</summary>
+    /// <summary>正解のうち、ぢ・づ・ヂ・ヅ。この 4 字は、濁点・半濁点の誤りの率がほかの字と大きく違い、混ぜると字の大きさの効果が見えなくなる(ADR 0021)ので、別に数える。理由は調べていない。</summary>
     public int Zu;
 
-    /// <summary>濁点・半濁点だけの誤り(<see cref="DakZu"/> を含む)と、その内訳(落 = 付く字に付かなかった / 付加 = 付かない字に付いた / 取違 = 濁点と半濁点の取り違え)。</summary>
-    public int Dak, DakLost, DakAdded, DakSwap, DakZu;
+    /// <summary>
+    /// 濁誤 = 正解が濁点・半濁点の付く字で、濁点・半濁点だけを読み違えた誤り(<see cref="DakLost"/> = 付かなかった + <see cref="DakSwap"/> = 濁点と半濁点の取り違え)。
+    /// 率は <see cref="Voiced"/> が母数で、分子は母数の一部。<see cref="DakZu"/> は、そのうち正解がぢ・づ・ヂ・ヅの分。
+    /// </summary>
+    public int Dak, DakLost, DakSwap, DakZu;
+
+    /// <summary>付加 = 正解が付かない字(清音)で、濁点・半濁点を足した誤り。清音の字の誤りなので、<see cref="Dak"/> には入れず、<see cref="PlainErrors"/> に入れる。</summary>
+    public int DakAdded;
 
     /// <summary>濁点・半濁点以外の誤り(別の字への置換 + 読み落とし)を、正解の字が濁点の付く字か付かない字(清音)かで分けたもの。</summary>
     public int OtherSubVoiced, OtherSubPlain, DeletedVoiced, DeletedPlain;
@@ -33,12 +39,15 @@ internal sealed class Tally
 
     public int DakWithoutZu => Dak - DakZu;
 
-    public int Errors => Dak + OtherSubVoiced + OtherSubPlain + DeletedVoiced + DeletedPlain + Inserted;
+    /// <summary>正解が付かない字(清音)の誤り(別の字への置換 + 読み落とし + 濁点・半濁点の付加)。清誤の分子。</summary>
+    public int PlainErrors => OtherSubPlain + DeletedPlain + DakAdded;
+
+    public int Errors => Dak + DakAdded + OtherSubVoiced + OtherSubPlain + DeletedVoiced + DeletedPlain + Inserted;
 
     public void Add(Tally o)
     {
         Ref += o.Ref; Voiced += o.Voiced; Zu += o.Zu;
-        Dak += o.Dak; DakLost += o.DakLost; DakAdded += o.DakAdded; DakSwap += o.DakSwap; DakZu += o.DakZu;
+        Dak += o.Dak; DakLost += o.DakLost; DakSwap += o.DakSwap; DakZu += o.DakZu; DakAdded += o.DakAdded;
         OtherSubVoiced += o.OtherSubVoiced; OtherSubPlain += o.OtherSubPlain; DeletedVoiced += o.DeletedVoiced; DeletedPlain += o.DeletedPlain;
         Inserted += o.Inserted; InsertedPunctuation += o.InsertedPunctuation;
     }
@@ -46,7 +55,8 @@ internal sealed class Tally
 
 /// <summary>
 /// 採点。正規化は ADR 0021 と同じ(NFKC・小文字化・空白除去)。正解と出力を文字(コードポイント)で並べ、編集距離の対応づけ(斜めを優先)から数える。
-/// 濁点・半濁点だけの誤り = 置換のうち、濁点・半濁点を外した字が同じもの。それ以外の置換・読み落とし(削除)は、正解の字が濁点の付く字か付かない字かで分ける。
+/// 濁点・半濁点だけの誤り = 置換のうち、濁点・半濁点を外した字が同じもの。正解が濁点・半濁点の付く字なら濁誤(落・取違)、付かない字なら付加(清音の字の誤り)。
+/// それ以外の置換・読み落とし(削除)は、正解の字が濁点の付く字か付かない字かで分ける。
 /// 挿入 = 余計な字(でっち上げ)。
 /// </summary>
 internal static class Scoring
@@ -112,11 +122,13 @@ internal static class Scoring
                     string rs = char.ConvertFromUtf32(r[a - 1]), hs = char.ConvertFromUtf32(h[b - 1]);
                     if (baseRef == baseHyp && markRef != markHyp)
                     {
-                        tally.Dak++;
-                        if (IsZu(r[a - 1])) tally.DakZu++;
-                        if (markRef != 0 && markHyp == 0) tally.DakLost++;
-                        else if (markRef == 0 && markHyp != 0) tally.DakAdded++;
-                        else tally.DakSwap++;
+                        if (markRef == 0) tally.DakAdded++;
+                        else
+                        {
+                            tally.Dak++;
+                            if (IsZu(r[a - 1])) tally.DakZu++;
+                            if (markHyp == 0) tally.DakLost++; else tally.DakSwap++;
+                        }
                         ops.Add($"{rs}→{hs}[濁]");
                     }
                     else

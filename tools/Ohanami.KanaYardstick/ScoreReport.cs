@@ -11,10 +11,11 @@ namespace Ohanami.KanaYardstick;
 
 /// <summary>採点の入力。</summary>
 /// <param name="Work">作業フォルダ(manifest.json と results.jsonl がある。report.txt などをここに書く)。</param>
-/// <param name="TextTokens">プロンプトの文章のトークン数。画像トークン = prompt_tokens − この値。モデルのトークナイザごとに違う(Qwen3-VL-8B + 製品のプロンプトは 536。ADR 0025)。</param>
+/// <param name="TextTokens">プロンプトの文章のトークン数。画像トークン = prompt_tokens − この値。モデルのトークナイザごとに違う(Qwen3-VL-8B + 製品のプロンプトは 536。ADR 0025)。既定は無い。</param>
 /// <param name="BaseCondition">進む線の表で、基準にする条件の名前。</param>
 /// <param name="VariantCondition">進む線の表で、比べる条件の名前。</param>
-internal sealed record ScoreOptions(string Work, int TextTokens, string BaseCondition, string VariantCondition);
+/// <param name="GateWithoutZu">進む線の合否に使う濁誤の率。false = ぢ・づ・ヂ・ヅを含む(ADR 0019 の線。0019 の表の再現はこちら)、true = ぢ・づ・ヂ・ヅを除く。既定は無い。</param>
+internal sealed record ScoreOptions(string Work, int TextTokens, string BaseCondition, string VariantCondition, bool GateWithoutZu);
 
 /// <summary>1 枚の結果(1 つの条件で流した 1 枚)。</summary>
 internal sealed class ScoredImage
@@ -49,7 +50,7 @@ internal static class ScoreReport
     /// <summary>画像トークンがこの値以上なら「上限に当たった」と数える(上限 3584 の画像が実際に取る値は、4K で 3476 付近)。</summary>
     private const int CapNearThreshold = 3400;
 
-    /// <summary>進む線(ADR 0019 の測定で、結果を見る前に決めたもの): 基準の条件の濁点・半濁点だけの誤りが 5% 以上、かつ比べる条件がその 1/3 以下。別の測定では、測る前に決め直す。</summary>
+    /// <summary>進む線(ADR 0019 の測定で、結果を見る前に決めたもの): 基準の条件の濁誤が 5% 以上、かつ比べる条件がその 1/3 以下。別の測定では、測る前に線を決め、この 2 つの値を合わせる。</summary>
     private const double GateBaseMinimum = 0.05;
     private const double GateRatio = 1.0 / 3.0;
 
@@ -87,11 +88,11 @@ internal static class ScoreReport
         File.WriteAllText(Path.Combine(work, "report.txt"), report, new UTF8Encoding(false));
 
         var det = new StringBuilder();
-        det.AppendLine("cond\tid\tmain\tstatus\tattempts\tref_len\tvoiced\tzu\tcer\tdak_err\tdak_err_zu\tother_sub_voiced\tother_sub_plain\tdel_voiced\tdel_plain\tins\tsec\tprompt_tokens\timg_tokens\teff_scale\tfinish\tref\thyp");
+        det.AppendLine("cond\tid\tmain\tstatus\tattempts\tref_len\tvoiced\tzu\tcer\tdak_err\tdak_err_zu\tdak_added\tother_sub_voiced\tother_sub_plain\tdel_voiced\tdel_plain\tins\tsec\tprompt_tokens\timg_tokens\teff_scale\tfinish\tref\thyp");
         foreach (ScoredImage i in images.OrderBy(i => i.Condition, StringComparer.Ordinal).ThenBy(i => i.Spec.Id, StringComparer.Ordinal))
         {
             Tally a = i.All;
-            det.AppendLine(string.Join("\t", i.Condition, i.Spec.Id, i.Main ? 1 : 0, i.Status, i.Attempts, a.Ref, a.Voiced, a.Zu, F(Cer(i)), a.Dak, a.DakZu, a.OtherSubVoiced, a.OtherSubPlain,
+            det.AppendLine(string.Join("\t", i.Condition, i.Spec.Id, i.Main ? 1 : 0, i.Status, i.Attempts, a.Ref, a.Voiced, a.Zu, F(Cer(i)), a.Dak, a.DakZu, a.DakAdded, a.OtherSubVoiced, a.OtherSubPlain,
                 a.DeletedVoiced, a.DeletedPlain, a.Inserted, F(i.Seconds), i.PromptTokens, i.ImageTokens, F(i.EffectiveScale), i.FinishReason, i.Reference, i.Hypothesis));
         }
         File.WriteAllText(Path.Combine(work, "per-image.tsv"), det.ToString(), new UTF8Encoding(false));
@@ -116,6 +117,7 @@ internal static class ScoreReport
 
         string[] conds = images.Select(i => i.Condition).Distinct(StringComparer.Ordinal).OrderBy(c => c, StringComparer.Ordinal).ToArray();
         W("条件: " + string.Join(" / ", conds));
+        W($"判定の線(進む線の合否): {o.BaseCondition} の濁誤が {GateBaseMinimum * 100:0}% 以上 かつ {o.VariantCondition} が {o.BaseCondition} の 1/3 以下。濁誤の率は {(o.GateWithoutZu ? "ぢ・づ・ヂ・ヅを除いた濁字" : "ぢ・づ・ヂ・ヅを含む濁字")} での値(--gate {(o.GateWithoutZu ? "without-zu" : "with-zu")})。");
         W("集計に使うのは「主」= 1 回目で finish_reason=stop になり、繰り返しの疑い(余計な字が正解の字数の半分超)でない出力だけ。");
         W("再試行(attempt 2・3 = dry_multiplier / repeat_penalty の付いた再実行)の出力・失敗・繰り返しの疑いは、混ぜずに最後の節で別に数える。");
         W($"プロンプトの文章のトークン数 = {o.TextTokens}(画像トークン = prompt_tokens − この値)。");
@@ -128,9 +130,9 @@ internal static class ScoreReport
             W($"{c} | {l.Count} | {l.Count(i => i.Main)} | {l.Count(i => i.Status == "ok" && i.Attempts > 1)} | {l.Count(i => i.Status != "ok")} | {l.Count(i => i.Loop)}");
         }
         W();
-        W("表の列: n=画像数 / 字=正解の字数 / 濁字=正解のうち濁点・半濁点の付く字 / CER=(置換+挿入+削除)÷字 / 濁誤=濁点・半濁点だけの誤り÷濁字(%。[]は Wilson 95% 区間。括弧は 落/付加/取違 の数)");
-        W("濁誤(ぢづ除く)=ぢ・づ・ヂ・ヅを除いた濁字の濁点・半濁点だけの誤り(%) / ぢづ誤=ぢ・づ・ヂ・ヅの濁点・半濁点だけの誤り÷ぢ・づ・ヂ・ヅの字数(%。括弧は字数。判定ではこの 2 つを別々に出す)");
-        W("濁他=濁字の濁点・半濁点以外の誤り(別の字への置換+読み落とし)÷濁字(%) / 清誤=付かない字(清音)の誤り(置換+読み落とし)÷清音字(%) / 余計=挿入÷字(%。括弧は記号の数)");
+        W("表の列: n=画像数 / 字=正解の字数 / 濁字=正解のうち濁点・半濁点の付く字 / CER=(置換+挿入+削除)÷字 / 濁誤=正解が濁点・半濁点の付く字で、濁点・半濁点だけを読み違えた誤り(落+取違)÷濁字(%。[]は Wilson 95% 区間。括弧は 落/取違 の数。付加は清誤に入る)");
+        W("濁誤(ぢづ除く)=ぢ・づ・ヂ・ヅを除いた濁字での濁誤(%) / ぢづ誤=ぢ・づ・ヂ・ヅの濁誤÷ぢ・づ・ヂ・ヅの字数(%。括弧は字数。この 2 つは別々に出す)");
+        W("濁他=濁字の濁点・半濁点以外の誤り(別の字への置換+読み落とし)÷濁字(%) / 清誤=付かない字(清音)の誤り(置換+読み落とし+濁点・半濁点の付加)÷清音字(%) / 余計=挿入÷字(%。括弧は記号の数)");
         W("秒=1 枚の平均 / 画像tok=平均(最小-最大) / 上限付近=画像トークン ≥ 3400 の枚数 / 実倍率=元の大きさに対する線形の倍率(画像トークンから逆算)");
         W();
 
@@ -153,29 +155,35 @@ internal static class ScoreReport
         Table(sb, "ひらがな(全体)", main, i => "全体", Scoring.Hiragana);
         Table(sb, "カタカナ(全体)", main, i => "全体", Scoring.Katakana);
 
-        W($"== 進む線(ADR 0019 の測定で結果を見る前に決めたもの。別の測定では測る前に決め直す): 濁点・半濁点だけの誤りが {o.BaseCondition} で {GateBaseMinimum * 100:0}% 以上 かつ {o.VariantCondition} が {o.BaseCondition} の 1/3 以下 ==");
-        W($"字の高さ(主の画像、背景と画面の大きさを合わせた全体) | 濁字({o.BaseCondition}/{o.VariantCondition}) | {o.BaseCondition} 濁誤% [区間] | {o.VariantCondition} 濁誤% [区間] | 比 | 5%以上 | 1/3以下 | 合否 | ぢづ除く {o.BaseCondition} → {o.VariantCondition} (%) | ぢづ {o.BaseCondition} → {o.VariantCondition} (%) | 時間 {o.VariantCondition}/{o.BaseCondition}(1 枚の平均秒の比)");
+        string gateRates = o.GateWithoutZu ? "ぢ・づ・ヂ・ヅを除いた濁誤" : "ぢ・づ・ヂ・ヅを含む濁誤";
+        (int Num, int Den) Gate(Tally t) => o.GateWithoutZu ? (t.DakWithoutZu, t.VoicedWithoutZu) : (t.Dak, t.Voiced);
+        W($"== 進む線(ADR 0019 の測定で結果を見る前に決めたもの。別の測定では、流す前に線を決める): {gateRates}が {o.BaseCondition} で {GateBaseMinimum * 100:0}% 以上 かつ {o.VariantCondition} が {o.BaseCondition} の 1/3 以下 ==");
+        W($"字の高さ(主の画像、背景と画面の大きさを合わせた全体) | 判定に使う母数({o.BaseCondition}/{o.VariantCondition}) | {o.BaseCondition} {gateRates}% [区間] | {o.VariantCondition} 同 [区間] | 比 | 5%以上 | 1/3以下 | 合否 | (参考)ぢづ除く {o.BaseCondition} → {o.VariantCondition} (%) | (参考)ぢづ {o.BaseCondition} → {o.VariantCondition} (%) | 時間 {o.VariantCondition}/{o.BaseCondition}(1 枚の平均秒の比)");
         foreach (int hh in main.Select(i => i.Spec.Height).Distinct().OrderBy(x => x))
         {
             var baseImages = main.Where(i => i.Condition == o.BaseCondition && i.Spec.Height == hh).ToList();
             var variantImages = main.Where(i => i.Condition == o.VariantCondition && i.Spec.Height == hh).ToList();
             Tally a = Sum(baseImages), b = Sum(variantImages);
-            if (a.Voiced == 0 || b.Voiced == 0) { W($"{hh} | {o.BaseCondition} か {o.VariantCondition} の画像が無い"); continue; }
-            double ra = a.Dak / (double)a.Voiced, rb = b.Dak / (double)b.Voiced;
+            (int na, int da) = Gate(a);
+            (int nb, int db) = Gate(b);
+            if (da == 0 || db == 0) { W($"{hh} | {o.BaseCondition} か {o.VariantCondition} の画像が無い(または母数が 0)"); continue; }
+            double ra = na / (double)da, rb = nb / (double)db;
             double ta = baseImages.Average(i => i.Seconds), tb = variantImages.Average(i => i.Seconds);
             bool c5 = ra >= GateBaseMinimum, c3 = rb <= ra * GateRatio;
-            W($"{hh} | {a.Voiced}/{b.Voiced} | {Pct(a.Dak, a.Voiced)} {Scoring.WilsonInterval(a.Dak, a.Voiced)} | {Pct(b.Dak, b.Voiced)} {Scoring.WilsonInterval(b.Dak, b.Voiced)} | {(ra == 0 ? "-" : (rb / ra).ToString("0.00", Inv))} | {(c5 ? "はい" : "いいえ")} | {(c3 ? "はい" : "いいえ")} | {(c5 && c3 ? "合" : "否")}"
+            W($"{hh} | {da}/{db} | {Pct(na, da)} {Scoring.WilsonInterval(na, da)} | {Pct(nb, db)} {Scoring.WilsonInterval(nb, db)} | {(ra == 0 ? "-" : (rb / ra).ToString("0.00", Inv))} | {(c5 ? "はい" : "いいえ")} | {(c3 ? "はい" : "いいえ")} | {(c5 && c3 ? "合" : "否")}"
                 + $" | {Pct(a.DakWithoutZu, a.VoicedWithoutZu)} → {Pct(b.DakWithoutZu, b.VoicedWithoutZu)} | {Pct(a.DakZu, a.Zu)} → {Pct(b.DakZu, b.Zu)} | {(tb / ta).ToString("0.0", Inv)} 倍({ta.ToString("0.0", Inv)}s → {tb.ToString("0.0", Inv)}s)");
         }
         W();
         W("(参考)同じ線を 字の高さ × 背景 で見たとき");
-        W($"字の高さ 背景 | 濁字({o.BaseCondition}/{o.VariantCondition}) | {o.BaseCondition} 濁誤% | {o.VariantCondition} 濁誤% | 合否");
+        W($"字の高さ 背景 | 判定に使う母数({o.BaseCondition}/{o.VariantCondition}) | {o.BaseCondition} {gateRates}% | {o.VariantCondition} 同% | 合否");
         foreach (var g in main.GroupBy(i => (i.Spec.Height, i.Spec.Bg)).OrderBy(g => g.Key.Height).ThenBy(g => g.Key.Bg, StringComparer.Ordinal))
         {
             Tally a = Sum(g.Where(i => i.Condition == o.BaseCondition)), b = Sum(g.Where(i => i.Condition == o.VariantCondition));
-            if (a.Voiced == 0 || b.Voiced == 0) continue;
-            double ra = a.Dak / (double)a.Voiced, rb = b.Dak / (double)b.Voiced;
-            W($"{g.Key.Height.ToString("00", Inv)} {g.Key.Bg} | {a.Voiced}/{b.Voiced} | {Pct(a.Dak, a.Voiced)} | {Pct(b.Dak, b.Voiced)} | {(ra >= GateBaseMinimum && rb <= ra * GateRatio ? "合" : "否")}");
+            (int na, int da) = Gate(a);
+            (int nb, int db) = Gate(b);
+            if (da == 0 || db == 0) continue;
+            double ra = na / (double)da, rb = nb / (double)db;
+            W($"{g.Key.Height.ToString("00", Inv)} {g.Key.Bg} | {da}/{db} | {Pct(na, da)} | {Pct(nb, db)} | {(ra >= GateBaseMinimum && rb <= ra * GateRatio ? "合" : "否")}");
         }
         W();
 
@@ -232,7 +240,7 @@ internal static class ScoreReport
     private static void Table(StringBuilder sb, string title, List<ScoredImage> all, Func<ScoredImage, string> key, int? script)
     {
         sb.AppendLine("== " + title + " ==");
-        sb.AppendLine("条件 | 区分 | n | 字 | 濁字 | CER% | 濁誤% [95%区間] (落/付加/取違) | 濁誤%(ぢづ除く) | ぢづ誤%(字数) | 濁他% | 清誤% | 余計% (記号) | 秒 | 画像tok 平均(最小-最大) | 上限付近 | 実倍率");
+        sb.AppendLine("条件 | 区分 | n | 字 | 濁字 | CER% | 濁誤% [95%区間] (落/取違) | 濁誤%(ぢづ除く) | ぢづ誤%(字数) | 濁他% | 清誤% | 余計% (記号) | 秒 | 画像tok 平均(最小-最大) | 上限付近 | 実倍率");
         foreach (var g in all.GroupBy(i => (Cond: i.Condition, Key: key(i))).OrderBy(g => g.Key.Key, StringComparer.Ordinal).ThenBy(g => g.Key.Cond, StringComparer.Ordinal))
         {
             var l = g.ToList();
@@ -245,11 +253,11 @@ internal static class ScoreReport
             var eff = l.Where(i => !double.IsNaN(i.EffectiveScale)).Select(i => i.EffectiveScale).ToList();
             sb.AppendLine(string.Join(" | ",
                 g.Key.Cond, g.Key.Key, l.Count, t.Ref, t.Voiced, Pct(t.Errors, t.Ref),
-                $"{Pct(t.Dak, t.Voiced)} {Scoring.WilsonInterval(t.Dak, t.Voiced)} ({t.DakLost}/{t.DakAdded}/{t.DakSwap})",
+                $"{Pct(t.Dak, t.Voiced)} {Scoring.WilsonInterval(t.Dak, t.Voiced)} ({t.DakLost}/{t.DakSwap})",
                 Pct(t.DakWithoutZu, t.VoicedWithoutZu),
                 $"{Pct(t.DakZu, t.Zu)} ({t.Zu})",
                 Pct(t.OtherSubVoiced + t.DeletedVoiced, t.Voiced),
-                Pct(t.OtherSubPlain + t.DeletedPlain, t.Plain),
+                Pct(t.PlainErrors, t.Plain),
                 $"{Pct(t.Inserted, t.Ref)} ({t.InsertedPunctuation})",
                 l.Average(i => i.Seconds).ToString("0.0", Inv),
                 toks.Count == 0 ? "-" : $"{toks.Average().ToString("0", Inv)}({toks.Min()}-{toks.Max()})",

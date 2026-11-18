@@ -31,26 +31,23 @@ namespace Ohanami.KanaYardstick;
 internal sealed record RunOptions(string Work, string LlamaServer, string Model, string Mmproj, string Condition, int? ImageMinTokens, int ImageMaxTokens, string ExtraArguments, string Only);
 
 /// <summary>
-/// 製品と同じ引数で llama-server を起動し(<see cref="LlamaServerArguments.Build"/>。ADR 0019)、製品の <c>VlmClient.BuildRequest</c> と同じ要求
-/// (プロンプトとスキーマは <see cref="VlmPrompt"/>・<see cref="VlmSchema"/>)で、画像を 1 枚ずつ流す。再試行(finish_reason = length のときだけ、
-/// dry_multiplier 0.8、次に repeat_penalty 1.1。同時には使わない)も製品と同じ。
+/// 製品と同じ引数で llama-server を起動し(<see cref="LlamaServerArguments.Build"/>。ADR 0019)、製品の <see cref="VlmClient"/> をそのまま呼んで、画像を 1 枚ずつ流す。
+/// 要求の組み立て・再試行(finish_reason = length のときだけ、dry_multiplier 0.8、次に repeat_penalty 1.1)・応答の解釈は、製品のコードそのもの(写しではない)。
 /// 1 回の実行で 1 つの条件を流す。結果は results.jsonl に 1 枚 1 行で足す(同じ条件・同じ id が済みなら流さない。途中から続けられる)。
 /// </summary>
 internal static class Runner
 {
-    private const int MaxTokens = 2048;
-
     private static readonly JsonSerializerOptions JsonLine = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public static async Task<int> RunAsync(RunOptions o, CancellationToken ct)
     {
         string work = Path.GetFullPath(o.Work);
         string prompt = VlmPrompt.Text;
-        JsonNode schema = JsonNode.Parse(VlmSchema.Json) ?? throw new InvalidOperationException("スキーマが JSON でない");
         foreach (string f in new[] { o.LlamaServer, o.Model, o.Mmproj })
             if (!File.Exists(f)) throw new FileNotFoundException("ファイルが無い: " + f);
 
-        List<Spec> specs = JsonSerializer.Deserialize<List<Spec>>(File.ReadAllText(Path.Combine(work, "manifest.json"))) ?? throw new InvalidDataException("manifest.json が空");
+        List<Spec> allSpecs = JsonSerializer.Deserialize<List<Spec>>(File.ReadAllText(Path.Combine(work, "manifest.json"))) ?? throw new InvalidDataException("manifest.json が空");
+        List<Spec> specs = allSpecs;
         if (o.Only.Length > 0) specs = specs.Where(s => s.Id.Contains(o.Only, StringComparison.Ordinal)).ToList();
         string resultsPath = Path.Combine(work, "results.jsonl");
         var done = new HashSet<string>(StringComparer.Ordinal);
@@ -72,7 +69,7 @@ internal static class Runner
         List<string> args = LlamaServerArguments.Build(launch, port).ToList();
         args.AddRange(o.ExtraArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
-        // 何で流したかの記録(結果と一緒に残す)。モデルのファイルは大きさだけ(SHA-256 は、候補を比べるときに別に取る)
+        // 何で流したかの記録(結果と一緒に残す)。画像の束のハッシュは gen が manifest.json に残したものを写す(別の環境で作った画像との取り違えを見分ける)
         File.WriteAllText(Path.Combine(work, $"run-info-{o.Condition}-{stamp}.json"), new JsonObject
         {
             ["condition"] = o.Condition,
@@ -81,22 +78,26 @@ internal static class Runner
             ["llama_server_sha256"] = Sha256Of(o.LlamaServer),
             ["model"] = o.Model,
             ["model_bytes"] = new FileInfo(o.Model).Length,
+            ["model_sha256"] = Sha256Of(o.Model),
             ["mmproj"] = o.Mmproj,
             ["mmproj_bytes"] = new FileInfo(o.Mmproj).Length,
+            ["mmproj_sha256"] = Sha256Of(o.Mmproj),
+            ["image_bundle_sha256"] = ImageSpecs.BundleSha256(allSpecs),
             ["arguments"] = new JsonArray(args.Select(a => (JsonNode?)a).ToArray()),
             ["prompt_sha256"] = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(prompt))),
-            ["max_tokens"] = MaxTokens,
+            ["max_tokens"] = VlmClient.MaxTokens,
         }.ToJsonString(new JsonSerializerOptions(JsonLine) { WriteIndented = true }), new UTF8Encoding(false));
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(300) };
         Process? server = null;
+        VlmClient? client = null;
         try
         {
             server = StartServer(o.LlamaServer, args, logPath);
             var sw0 = Stopwatch.StartNew();
             await WaitHealth(http, port, server, ct);
             Console.WriteLine($"[{o.Condition}] llama-server 起動 {sw0.Elapsed.TotalSeconds:0.0} 秒、ポート {port}、pid {server.Id}、min-tokens={o.ImageMinTokens?.ToString(CultureInfo.InvariantCulture) ?? "既定"}、GPU 全体の使用 {GpuUsed()} MiB");
-            var endpoint = new Uri($"http://127.0.0.1:{port}/v1/chat/completions");
+            client = new VlmClient(new Uri($"http://127.0.0.1:{port}"));
 
             int i = 0;
             foreach (Spec s in todo)
@@ -104,7 +105,7 @@ internal static class Runner
                 ct.ThrowIfCancellationRequested();
                 i++;
                 byte[] bytes = File.ReadAllBytes(Path.Combine(work, "images", s.Id + ".png"));
-                JsonObject rec = await OneImage(http, endpoint, bytes, prompt, schema, ct);
+                JsonObject rec = await OneImage(client, bytes, ct);
                 rec["id"] = s.Id;
                 rec["cond"] = o.Condition;
                 rec["min_tokens"] = o.ImageMinTokens;
@@ -117,6 +118,7 @@ internal static class Runner
         }
         finally
         {
+            client?.Dispose();
             if (server is not null && !server.HasExited)
             {
                 server.Kill(entireProcessTree: true);
@@ -127,108 +129,29 @@ internal static class Runner
         return 0;
     }
 
-    private static async Task<JsonObject> OneImage(HttpClient http, Uri endpoint, byte[] png, string prompt, JsonNode schema, CancellationToken ct)
+    /// <summary>画像 1 枚を、製品の <see cref="VlmClient"/> で処理し、results.jsonl の 1 行にする。</summary>
+    private static async Task<JsonObject> OneImage(VlmClient client, byte[] png, CancellationToken ct)
     {
-        string dataUri = "data:image/png;base64," + Convert.ToBase64String(png);
-        var rec = new JsonObject();
         var total = Stopwatch.StartNew();
-        var attempts = new JsonArray();
-        string status = "failed";
-        string? error = null;
-        for (int attempt = 1; attempt <= 3; attempt++)
+        VlmResult r = await client.CaptionAsync(png, Ohanami.Core.Data.ImageFormat.Png, ct);
+        JsonObject settings = JsonNode.Parse(r.SettingsJson) as JsonObject ?? throw new InvalidDataException("VlmResult.SettingsJson が JSON のオブジェクトでない");
+        var rec = new JsonObject
         {
-            var req = new JsonObject
-            {
-                ["messages"] = new JsonArray(new JsonObject
-                {
-                    ["role"] = "user",
-                    ["content"] = new JsonArray(
-                        new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = dataUri } },
-                        new JsonObject { ["type"] = "text", ["text"] = prompt }),
-                }),
-                ["temperature"] = 0.0,
-                ["response_format"] = new JsonObject { ["type"] = "json_schema", ["json_schema"] = new JsonObject { ["schema"] = schema.DeepClone() } },
-                ["max_tokens"] = MaxTokens,
-                ["cache_prompt"] = false,
-            };
-            if (attempt == 2) req["dry_multiplier"] = 0.8;
-            if (attempt == 3) req["repeat_penalty"] = 1.1;
-
-            var sw = Stopwatch.StartNew();
-            int code;
-            string body;
-            try
-            {
-                using var content = new StringContent(req.ToJsonString(), new UTF8Encoding(false), "application/json");
-                using HttpResponseMessage resp = await http.PostAsync(endpoint, content, ct);
-                code = (int)resp.StatusCode;
-                body = await resp.Content.ReadAsStringAsync(ct);
-            }
-            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
-            {
-                ct.ThrowIfCancellationRequested();
-                status = "server_failure";
-                error = e.GetType().Name + ": " + e.Message;
-                attempts.Add(new JsonObject { ["attempt"] = attempt, ["error"] = error, ["wall_ms"] = sw.Elapsed.TotalMilliseconds });
-                break;
-            }
-            var a = new JsonObject { ["attempt"] = attempt, ["http_status"] = code, ["wall_ms"] = Math.Round(sw.Elapsed.TotalMilliseconds, 1) };
-            attempts.Add(a);
-            if (code != 200)
-            {
-                status = code >= 500 ? "server_failure" : "failed";
-                error = $"HTTP {code}: {(body.Length > 300 ? body[..300] : body)}";
-                a["error"] = error;
-                break;
-            }
-            using JsonDocument doc = JsonDocument.Parse(body);
-            JsonElement root = doc.RootElement;
-            JsonElement choice = root.GetProperty("choices")[0];
-            string? finish = choice.TryGetProperty("finish_reason", out JsonElement fr) && fr.ValueKind == JsonValueKind.String ? fr.GetString() : null;
-            JsonElement msg = choice.GetProperty("message");
-            string? contentText = msg.TryGetProperty("content", out JsonElement ce) && ce.ValueKind == JsonValueKind.String ? ce.GetString() : null;
-            bool thinking = msg.TryGetProperty("reasoning_content", out JsonElement rc) && rc.ValueKind == JsonValueKind.String && rc.GetString()!.Length > 0;
-            int? promptTokens = root.TryGetProperty("usage", out JsonElement u) && u.TryGetProperty("prompt_tokens", out JsonElement pt) ? pt.GetInt32() : null;
-            int? completionTokens = root.TryGetProperty("usage", out JsonElement u2) && u2.TryGetProperty("completion_tokens", out JsonElement ct2) ? ct2.GetInt32() : null;
-            a["finish_reason"] = finish;
-            a["prompt_tokens"] = promptTokens;
-            a["completion_tokens"] = completionTokens;
-            if (root.TryGetProperty("timings", out JsonElement tm)) a["timings"] = JsonNode.Parse(tm.GetRawText());
-            rec["finish_reason"] = finish;
-            rec["prompt_tokens"] = promptTokens;
-            rec["completion_tokens"] = completionTokens;
-            if (root.TryGetProperty("timings", out JsonElement tm2)) rec["timings"] = JsonNode.Parse(tm2.GetRawText());
-            if (thinking) { status = "failed"; error = "思考の痕跡がある"; break; }
-            if (finish == "length")
-            {
-                a["partial_content"] = contentText;   // 再試行の前の出力(繰り返しの疑い)。採点には使わず、別に数える
-                if (attempt < 3) continue;
-                status = "failed"; error = "finish_reason=length"; break;
-            }
-            if (finish != "stop") { status = "failed"; error = "finish_reason=" + finish; break; }
-            try
-            {
-                JsonNode? n = JsonNode.Parse(contentText ?? "");
-                if (n is not JsonObject obj) throw new FormatException("JSON のオブジェクトでない");
-                foreach (var kv in obj)
-                    if (kv.Key is not ("ocr" or "description" or "tags")) throw new FormatException("想定外のプロパティ " + kv.Key);
-                rec["ocr"] = (string?)obj["ocr"] ?? throw new FormatException("ocr が無い");
-                rec["description"] = (string?)obj["description"] ?? throw new FormatException("description が無い");
-                rec["tags"] = obj["tags"]?.DeepClone();
-                status = "ok";
-            }
-            catch (Exception e) when (e is FormatException or JsonException or InvalidCastException)
-            {
-                status = "failed";
-                error = "パース失敗: " + e.Message;
-                rec["raw_content"] = contentText;
-            }
-            break;
+            ["status"] = r.Outcome switch { VlmOutcome.Ok => "ok", VlmOutcome.Failed => "failed", VlmOutcome.ServerFailure => "server_failure", _ => throw new InvalidOperationException("未知の結果: " + r.Outcome) },
+            ["finish_reason"] = r.FinishReason,
+            ["prompt_tokens"] = r.PromptTokens,
+        };
+        if (r.Caption is { } c)
+        {
+            rec["ocr"] = c.Ocr;
+            rec["description"] = c.Description;
+            rec["tags"] = new JsonArray(c.Tags.Select(t => (JsonNode?)t).ToArray());
         }
-        rec["status"] = status;
-        if (error is not null) rec["error"] = error;
-        rec["attempt_count"] = attempts.Count;
-        rec["attempts"] = attempts;
+        if (r.Error is not null) rec["error"] = r.Error;
+        JsonNode attempts = settings["attempts"] ?? throw new InvalidDataException("settings に attempts が無い");
+        rec["attempt_count"] = r.Attempt;
+        rec["attempts"] = attempts.DeepClone();
+        if (settings["timings"] is { } timings) rec["timings"] = timings.DeepClone();
         rec["wall_ms"] = Math.Round(total.Elapsed.TotalMilliseconds, 1);
         return rec;
     }

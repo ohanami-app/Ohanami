@@ -19,20 +19,22 @@ internal static class Program
         Ohanami.KanaYardstick: 濁点・半濁点の読み取りの尺(合成画像。私物の画像は使わない)
 
           gen   --work <dir> [--seed <数>]
-                合成画像 90 枚(<work>/images/*.png)と、正解の文を持つ <work>/manifest.json を作る。同じ種なら同じ仕様。既定の種 = 20261119。
+                合成画像 90 枚(<work>/images/*.png)と、正解の文・画素のハッシュを持つ <work>/manifest.json を作り、画像の束のハッシュを表示する。同じ種なら同じ仕様。既定の種 = 20261119。
+                別の環境(フォント・WPF の版)で作ると、画素が変わりうる。記録の数字と比べてよいのは、束のハッシュが同じときだけ。
           run   --work <dir> --llama <llama-server.exe> --model <gguf> --mmproj <gguf> --cond <名前> [--min-tokens <数>] [--max-tokens <数>] [--extra "<引数>"] [--only <文字列>]
                 製品と同じ引数・要求で llama-server を起動し、画像を 1 枚ずつ流して <work>/results.jsonl に足す。1 回で 1 つの条件。
                 --min-tokens = --image-min-tokens(既定は付けない)、--max-tokens = --image-max-tokens(既定 製品の値)、--extra = 製品の引数のあとに足す引数(空白区切り)、
                 --only = id にこの文字列を含む画像だけ(試し用)。済みの (条件, id) は流さない。
-          score --work <dir> [--text-tokens <数>] [--base <条件>] [--variant <条件>]
+          score --work <dir> --text-tokens <数> --gate with-zu|without-zu [--base <条件>] [--variant <条件>]
                 results.jsonl を採点して、<work>/report.txt・per-image.tsv・alignments.txt を書き、report を表示する。
-                --text-tokens = プロンプトの文章のトークン数(既定 536 = Qwen3-VL-8B + 製品のプロンプト。別のモデルでは、小さい画像の prompt_tokens から測り直す)、
+                --text-tokens = プロンプトの文章のトークン数(必須。Qwen3-VL-8B + 製品のプロンプトは 536。別のモデルでは、小さい画像の prompt_tokens から測り直す)、
+                --gate = 「進む線」の合否に使う濁誤の率(必須。with-zu = ぢ・づ・ヂ・ヅを含む、without-zu = 除く。ADR 0019 の表の再現は with-zu)、
                 --base・--variant = 「進む線」の表で比べる 2 つの条件(既定 c1・c2)。
 
         --work はリポジトリの外(生成物と結果をコミットしないため)。
         """;
 
-    private static readonly string[] KnownOptions = ["--work", "--seed", "--llama", "--model", "--mmproj", "--cond", "--min-tokens", "--max-tokens", "--extra", "--only", "--text-tokens", "--base", "--variant"];
+    private static readonly string[] KnownOptions = ["--work", "--seed", "--llama", "--model", "--mmproj", "--cond", "--min-tokens", "--max-tokens", "--extra", "--only", "--text-tokens", "--gate", "--base", "--variant"];
 
     [STAThread]
     private static int Main(string[] args)
@@ -50,7 +52,7 @@ internal static class Program
                 _ => Fail("知らないコマンド: " + args[0]),
             };
         }
-        catch (Exception e) when (e is InvalidOperationException or InvalidDataException or IOException or ArgumentException or TimeoutException or JsonException)
+        catch (Exception e) when (e is InvalidOperationException or InvalidDataException or IOException or ArgumentException or TimeoutException or JsonException or Ohanami.Core.Vlm.VlmProtocolException)
         {
             Console.Error.WriteLine("失敗: " + e.Message);
             return 1;
@@ -103,11 +105,18 @@ internal static class Program
         ImageRenderer.CheckFonts();
         Directory.CreateDirectory(Path.Combine(work, "images"));
         IReadOnlyList<Spec> specs = ImageSpecs.Build(seed);
-        foreach (Spec s in specs) ImageRenderer.SavePng(ImageRenderer.Render(s), Path.Combine(work, "images", s.Id + ".png"));
+        var hashed = new List<Spec>();
+        foreach (Spec s in specs)
+        {
+            System.Windows.Media.Imaging.BitmapSource image = ImageRenderer.Render(s);
+            ImageRenderer.SavePng(image, Path.Combine(work, "images", s.Id + ".png"));
+            hashed.Add(s with { PixelSha256 = ImageRenderer.PixelSha256(image) });
+        }
+        specs = hashed;
         File.WriteAllText(Path.Combine(work, "manifest.json"),
             JsonSerializer.Serialize(specs, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }),
             new UTF8Encoding(false));
-        Console.WriteLine($"images={specs.Count} chars={specs.Sum(s => s.Lines.Sum(l => l.Length))} seed={seed}");
+        Console.WriteLine($"images={specs.Count} chars={specs.Sum(s => s.Lines.Sum(l => l.Length))} seed={seed} bundle_sha256={ImageSpecs.BundleSha256(specs)}");
         return 0;
     }
 
@@ -123,8 +132,17 @@ internal static class Program
         return Runner.RunAsync(o, cts.Token).GetAwaiter().GetResult();
     }
 
-    private static int Score(Dictionary<string, string> flags) =>
-        ScoreReport.Run(new ScoreOptions(WorkDirectory(flags), OptionalInt(flags, "--text-tokens") ?? 536, flags.GetValueOrDefault("--base") ?? "c1", flags.GetValueOrDefault("--variant") ?? "c2"));
+    private static int Score(Dictionary<string, string> flags)
+    {
+        int textTokens = OptionalInt(flags, "--text-tokens") ?? throw new ArgumentException("--text-tokens が要る(プロンプトの文章のトークン数。モデルごとに違う)");
+        bool withoutZu = Required(flags, "--gate") switch
+        {
+            "with-zu" => false,
+            "without-zu" => true,
+            var other => throw new ArgumentException($"--gate は with-zu か without-zu: {other}"),
+        };
+        return ScoreReport.Run(new ScoreOptions(WorkDirectory(flags), textTokens, flags.GetValueOrDefault("--base") ?? "c1", flags.GetValueOrDefault("--variant") ?? "c2", withoutZu));
+    }
 
     /// <summary>--work がリポジトリの中なら拒否する(生成物と結果をコミットに入れない)。</summary>
     private static void RefuseInsideRepository(string path)
