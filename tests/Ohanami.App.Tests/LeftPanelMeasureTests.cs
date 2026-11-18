@@ -259,13 +259,13 @@ public sealed class LeftPanelMeasureTests
     {
         sb.AppendLine();
         sb.AppendLine("==================================================================");
-        sb.AppendLine($"詳細画面を開いたときの画像の幅(左 {WindowLayout.LeftColumnWidth} + 右パネルの余白 6・12 + 詳細画面の右の欄 {WindowLayout.DetailSideWidth} 固定 + 詳細の内側の余白 {WindowLayout.DetailInnerMargin}×2 + 画像の余白 6×2)");
+        sb.AppendLine($"詳細画面を開いたときの画像の幅(詳細画面は、状態の行を除く窓の全面 = クライアント幅。そこから、詳細画面の右の欄 {WindowLayout.DetailSideWidth} 固定 + 詳細の内側の余白 {WindowLayout.DetailInnerMargin}×2 + 画像の余白 6×2 を引く)");
         foreach ((string name, double w) in new[] { ("既定 1180", 1180.0), ($"最小 {WindowLayout.MinWindowWidth}", WindowLayout.MinWindowWidth), ("1280", 1280.0), ("1920", 1920.0) })
         {
             double clientW = w - frame.Left - frame.Right;
-            // 一覧(右パネル)の body と同じ幅 = DetailView に渡す幅: クライアント幅 − 左の列 − 右パネルの余白(左 6・右 12)。
+            // DetailView に渡す幅 = 詳細画面の層の幅 = クライアント幅(MainLayout が、左の列・一覧の全面にまたがらせる)。
             // 詳細の内側の余白(DetailInnerMargin×2)は、DetailView が自分の中で引くので、ここでは引かない(引くと二重になる)
-            double detailW = Math.Max(0, clientW - WindowLayout.LeftColumnWidth - WindowLayout.RightPanelMarginWidth);
+            double detailW = Math.Max(0, clientW);
             var view = new DetailView { Visibility = Visibility.Visible };
             FontSetup(view);
             view.Measure(new Size(detailW, 600));
@@ -275,7 +275,7 @@ public sealed class LeftPanelMeasureTests
                 ?? (Border)VisualWalk(view).First(x => x is Border b && b.Background is SolidColorBrush c && c.Color == Color.FromRgb(0x1E, 0x1E, 0x1E));
             Image image = VisualWalk(host).OfType<Image>().First();
             ScrollViewer side = VisualWalk(view).OfType<ScrollViewer>().First();
-            sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: クライアント幅の推定 {Fmt(clientW)} → 詳細画面の幅 {Fmt(detailW)} → 画像の欄(暗い背景)の幅 {Fmt(host.ActualWidth)} → 画像に使える幅 {Fmt(Math.Max(0, host.ActualWidth - 12))}(画像の余白 6×2 を引く)、右の欄(スクロール)の幅 {Fmt(side.ActualWidth)}(うち内容は余白 12 + 8 を引く)");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: クライアント幅の推定 {Fmt(clientW)} = 詳細画面の幅 {Fmt(detailW)} → 画像の欄(暗い背景)の幅 {Fmt(host.ActualWidth)} → 画像に使える幅 {Fmt(Math.Max(0, host.ActualWidth - 12))}(画像の余白 6×2 を引く)、右の欄(スクロール)の幅 {Fmt(side.ActualWidth)}(うち内容は余白 12 + 8 を引く)");
         }
     }
 

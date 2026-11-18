@@ -53,6 +53,9 @@ internal sealed class ResultsPanel : DockPanel
     private readonly TextBlock _header;
     private readonly Border _banner;
     private readonly TextBlock _bannerText;
+    private readonly Border _detailBanner;         // 詳細画面の層の中の帯(_banner と同じ文・同じ出し入れ)
+    private readonly TextBlock _detailBannerText;
+    private readonly Grid _detailLayer;
     private readonly DispatcherTimer _bannerTimer;
 
     private Dictionary<string, SearchResult> _results = new(StringComparer.Ordinal);
@@ -73,7 +76,7 @@ internal sealed class ResultsPanel : DockPanel
     private HashSet<string> _noTextIndex = new(StringComparer.Ordinal);
     private int _noTextIndexSerial;
 
-    // 詳細画面: 一覧の上に重ねる全面の表示。開いている画像のハッシュ(開いていなければ null)
+    // 詳細画面: 窓の全面(状態の行を除く)に重ねる表示。開いている画像のハッシュ(開いていなければ null)
     private readonly DetailView _detail = new();
     private string? _detailHash;
     private int _detailSerial;
@@ -165,20 +168,10 @@ internal sealed class ResultsPanel : DockPanel
         _actionRow = new DockPanel { LastChildFill = false };
         _actionRow.Children.Add(_tagButton);
 
-        // 操作できなかったときの、目立つ知らせ(一覧の上に重ねる)。下の状態の行の通知だけでは、利用者に見えない
-        _bannerText = new TextBlock { Foreground = AppColors.OnDark, FontSize = 14, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 };
-        _banner = new Border
-        {
-            Background = AppColors.Warn,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(16, 10, 16, 10),
-            Margin = new Thickness(12, 16, 12, 0),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Top,
-            IsHitTestVisible = false,
-            Visibility = Visibility.Collapsed,
-            Child = _bannerText,
-        };
+        // 操作できなかったときの、目立つ知らせ(一覧の上に重ねる)。下の状態の行の通知だけでは、利用者に見えない。
+        // 詳細画面は窓の全面(状態の行の上)を覆うので、詳細画面の層にも同じ帯を 1 つ置く(出す・隠すは、2 つそろえる。状態は持たない)
+        _banner = NewBanner(out _bannerText);
+        _detailBanner = NewBanner(out _detailBannerText);
         _bannerTimer = new DispatcherTimer { Interval = BannerDuration };
         _bannerTimer.Tick += (_, _) => HideBanner();
 
@@ -195,12 +188,15 @@ internal sealed class ResultsPanel : DockPanel
         Grid.SetColumn(_grid, 0);
         Grid.SetColumn(_bar, 1);
         Grid.SetColumn(_banner, 0);
-        Grid.SetColumn(_detail, 0);
-        Grid.SetColumnSpan(_detail, 2);   // 一覧とスクロールバーの全面を覆う
         body.Children.Add(_grid);
         body.Children.Add(_bar);
-        body.Children.Add(_detail);   // 一覧の上(後に足したものが前面)。上の検索ボックスと見出しは、そのまま見える
-        body.Children.Add(_banner);   // 詳細画面よりさらに上(操作できなかった知らせは、詳細画面からの操作でも出す)
+        body.Children.Add(_banner);
+
+        // 詳細画面の層: 詳細画面と、その前の帯。置く場所は MainWindow(MainLayout)で、窓の中の、状態の行を除く全面。
+        // 一覧は、この層の下でそのまま動かない(大きさも、並ぶ列数も、位置も変えない)。操作の結果(帯)は、詳細画面からの操作でも出す
+        _detailLayer = new Grid { Visibility = Visibility.Collapsed };
+        _detailLayer.Children.Add(_detail);
+        _detailLayer.Children.Add(_detailBanner);   // 詳細画面の前(後に足したものが前面)
 
         SetDock(searchRow, Dock.Top);
         SetDock(_header, Dock.Top);
@@ -747,7 +743,7 @@ internal sealed class ResultsPanel : DockPanel
     internal DetailView DetailViewForTests => _detail;
 
     /// <summary>
-    /// ハッシュの画像の詳細画面を開く(一覧の上に重ねる)。すぐ、検索の結果の情報(順位・一致の欄・パス)を出し、続けて詳細(<see cref="DetailFunc"/>)と大きな画像(<see cref="ImageFunc"/>)を読む。
+    /// ハッシュの画像の詳細画面を開く(窓の全面に重ねる。一覧は、下でそのまま動かない)。すぐ、検索の結果の情報(順位・一致の欄・パス)を出し、続けて詳細(<see cref="DetailFunc"/>)と大きな画像(<see cref="ImageFunc"/>)を読む。
     /// 戻り値は、その読み込みが終わるまで(テスト用。呼び出し側は待たなくてよい)。結果に無いハッシュは何もしない。読み込みの失敗は、画面に理由を出して続ける(落ちない)。
     /// </summary>
     internal Task OpenDetailAsync(string hash)
@@ -803,7 +799,7 @@ internal sealed class ResultsPanel : DockPanel
         _detailSerial++;
         _detailHash = null;
         _detail.Visibility = Visibility.Collapsed;
-        _actionRow.Visibility = Visibility.Visible;
+        _detailLayer.Visibility = Visibility.Collapsed;
         _detailResult = null;
         _standalone = null;
         _detail.SetImage(null, null);   // 大きな画像を手放す
@@ -833,13 +829,13 @@ internal sealed class ResultsPanel : DockPanel
         else _detail.SetPosition(1, 1, false, false);   // 検索の結果の外の詳細: 前後は無い
         _detailResult = result;
         _detailLoad = DetailLoad.Loading;
-        _actionRow.Visibility = Visibility.Collapsed;   // 一覧の「タグを付ける」は、詳細画面の間は隠す(詳細画面の手動タグの欄で編集する)
         _detail.ShowTagError(null);
         _detail.ClearTagInput();
         _detail.SetCandidates([]);
         RenderDetail();
         _detail.ResetScroll();   // 別の画像に移った: 右側は先頭(タイトルと順位)から見せる
         _detail.SetImage(null, "読み込み中…");
+        _detailLayer.Visibility = Visibility.Visible;
         _detail.Visibility = Visibility.Visible;
         _detail.Focus();
         return LoadDetailAsync(hash, result, serial, cts.Token);
@@ -1070,6 +1066,7 @@ internal sealed class ResultsPanel : DockPanel
     /// <summary>テスト・確認用: 一覧の「タグを付ける」ボタン。</summary>
     internal Button TagButton => _tagButton;
 
+    /// <summary>一覧の「タグを付ける」の行が出ているか。詳細画面を開いても、一覧の大きさを変えないので、隠さない(詳細画面の層の下に隠れる)。</summary>
     internal bool TagRowVisible => _actionRow.Visibility == Visibility.Visible;
 
     /// <summary>
@@ -1113,7 +1110,9 @@ internal sealed class ResultsPanel : DockPanel
     {
         _notice(text);
         _bannerText.Text = text;
+        _detailBannerText.Text = text;
         _banner.Visibility = Visibility.Visible;
+        _detailBanner.Visibility = Visibility.Visible;
         _bannerTimer.Stop();
         _bannerTimer.Start();
     }
@@ -1122,12 +1121,42 @@ internal sealed class ResultsPanel : DockPanel
     {
         _bannerTimer.Stop();
         _banner.Visibility = Visibility.Collapsed;
+        _detailBanner.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>操作できなかったときの帯。一覧の本体の上と、詳細画面の層の中に 1 つずつ作る(詳細画面が窓の全面を覆っても、帯が見える)。</summary>
+    private static Border NewBanner(out TextBlock text)
+    {
+        text = new TextBlock { Foreground = AppColors.OnDark, FontSize = 14, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 };
+        return new Border
+        {
+            Background = AppColors.Warn,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(16, 10, 16, 10),
+            Margin = new Thickness(12, 16, 12, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+            Child = text,
+        };
     }
 
     /// <summary>テスト・確認用: バナーが出ているか・その文。</summary>
     internal bool BannerVisible => _banner.Visibility == Visibility.Visible;
 
     internal string BannerText => _bannerText.Text;
+
+    /// <summary>テスト・確認用: 詳細画面の層の中の帯が出ているか・その文。</summary>
+    internal bool DetailBannerVisible => _detailBanner.Visibility == Visibility.Visible;
+
+    internal string DetailBannerText => _detailBannerText.Text;
+
+    /// <summary>
+    /// 詳細画面の層(詳細画面と、その前の帯)。<see cref="MainWindow"/>(<see cref="MainLayout"/>)が、窓の中の、状態の行を除く全面に、左の列・一覧の上に置く。
+    /// 詳細画面を開いている間だけ見える(閉じている間は隠れていて、下の操作を邪魔しない)。
+    /// </summary>
+    internal Grid DetailLayer => _detailLayer;
 
 
     private void BuildContextMenu()

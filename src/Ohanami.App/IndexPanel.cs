@@ -53,7 +53,7 @@ internal sealed class IndexPanel : DockPanel
     /// <summary>走査が終わった(成功したとき。UI スレッド)。MainWindow が、今の検索をやり直して、消えた・動かした画像を結果に反映する。</summary>
     public event Action<ScanSummary>? ScanFinished;
 
-    /// <summary>失敗の一覧の「詳細」が押された(画像のハッシュ。UI スレッド)。MainWindow が、結果の一覧の上に、その画像の詳細画面を開く。</summary>
+    /// <summary>失敗の一覧の「詳細」が押された(画像のハッシュ。UI スレッド)。MainWindow が、その画像の詳細画面を開く(状態の行を除く窓の全面に重なる。ADR 0050)。</summary>
     public event Action<string>? OpenDetailRequested;
 
     /// <summary>確認の画面(タイトル, 本文 → OK なら true)。既定は <see cref="MessageBox"/>。テストで差し替える。</summary>

@@ -8,9 +8,9 @@ using Ohanami.Core;
 namespace Ohanami.App;
 
 /// <summary>
-/// ウィンドウ(詳細画面は <see cref="ResultsPanel"/> が一覧の上に重ねる)。XAML も Binding も使わず、すべてコードで組む(AGENTS.md「すべて明示的に」)。
-/// 左(<see cref="IndexPanel"/>: フォルダ・インデックス)、右(<see cref="ResultsPanel"/>: 検索・一覧)、下(<see cref="StatusBarView"/>: 状態)の 3 つを並べ、
-/// Core の開閉と、3 つのつなぎだけを持つ。
+/// ウィンドウ。XAML も Binding も使わず、すべてコードで組む(AGENTS.md「すべて明示的に」)。
+/// 左(<see cref="IndexPanel"/>: フォルダ・インデックス)、右(<see cref="ResultsPanel"/>: 検索・一覧)、下(<see cref="StatusBarView"/>: 状態)の 3 つを並べ(組み立ては <see cref="MainLayout"/>)、
+/// Core の開閉と、3 つのつなぎだけを持つ。詳細画面は、<see cref="ResultsPanel"/> が持ち、状態の行を除く窓の全面に重ねる(ADR 0050)。
 /// <list type="bullet">
 /// <item>開く: ウィンドウが開いたら <c>OhanamiCore.OpenAsync</c>。失敗したら理由を出して、何も使えない状態で止まる。</item>
 /// <item>閉じる: Core の破棄(実行中のジョブ・走査・サムネイルの仕事を止めてから DB を閉じる)を待ってから閉じる。待つあいだに × がもう一度押されても、閉じない。</item>
@@ -58,7 +58,7 @@ internal sealed class MainWindow : Window
             try { await _index.RescanFoldersOfAsync(paths); }
             catch (Exception ex) { if (!_closing) _log.Error("元のファイルが見つからなかったフォルダの走査し直しに失敗", ex); }
         };
-        // 処理状態の失敗の一覧の「詳細」: 結果の一覧の上に、その画像の詳細画面を開く(検索の結果の外の画像でも開ける)
+        // 処理状態の失敗の一覧の「詳細」: その画像の詳細画面を開く(検索の結果の外の画像でも開ける)
         _index.OpenDetailRequested += hash =>
         {
             try { _ = _results.OpenDetailByHashAsync(hash); }
@@ -70,22 +70,7 @@ internal sealed class MainWindow : Window
             catch (Exception ex) { if (!_closing) _log.Error("走査のあとの検索のやり直しに失敗", ex); }
         };
 
-        var main = new Grid();
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(WindowLayout.LeftColumnWidth) });
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(_index, 0);
-        Grid.SetColumn(_results, 1);
-        main.Children.Add(_index);
-        main.Children.Add(_results);
-
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        Grid.SetRow(main, 0);
-        Grid.SetRow(_status, 1);
-        root.Children.Add(main);
-        root.Children.Add(_status);
-        Content = root;
+        Content = MainLayout.Build(_index, _results, _status);
 
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;

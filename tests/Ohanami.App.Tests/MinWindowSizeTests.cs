@@ -12,56 +12,59 @@ using Xunit;
 namespace Ohanami.App.Tests;
 
 /// <summary>
-/// 窓の最小の大きさ(<see cref="WindowLayout.MinWindowWidth"/>×<see cref="WindowLayout.MinWindowHeight"/>)で、見えるべきものが見えること。
-/// 最小の幅は、画像が最低限見える幅にする(ADR 0039)。「最低限」= 詳細画面の画像に使える幅が、一覧のサムネイルの幅(256px)以上
-/// (画像の見え方が一覧より小さくならない)。同時に、「フォルダ一覧が 2 行以上見える」も、最小の窓の大きさで固定する。
-/// 窓は表示せず、MainWindow と同じ割り付け(左 300 固定・右は残り)で測る(論理単位 = DPI 96 のピクセル)。
+/// 窓の最小の大きさ(<see cref="WindowLayout.MinWindowWidth"/>×<see cref="WindowLayout.MinWindowHeight"/>)で、見えるべきものが見えること(ADR 0039・0050)。
+/// 詳細画面は状態の行を除く窓の全面に重なるので、画像に使える幅は「外側 − 枠 − 右の欄 − 内側の余白 − 画像の余白」で決まる。最小の幅でも、一覧のサムネイルの幅(256px)以上であること。
+/// 同時に、「フォルダ一覧が 2 行以上見える」「一覧が最小の幅で 2 列・既定の幅で 3 列」を、最小の窓の大きさで固定する。
+/// 窓は表示せず、MainWindow と同じ組み立て(<see cref="MainLayout"/>)で測る(論理単位 = DPI 96 のピクセル)。
 /// </summary>
 public sealed class MinWindowSizeTests
 {
     /// <summary>MainWindow と同じフォントと、アプリと同じ Fluent の皮(TestLook)。</summary>
     private static void FontSetup(FrameworkElement e) => TestLook.Setup(e);
 
-    /// <summary>外側の幅から、一覧(右パネル)の本体と同じ幅(= 詳細画面の幅)を出す: 外側 − 枠 − 左の列 − 右パネルの余白。</summary>
+    /// <summary>外側の幅から、一覧(右パネル)の本体の幅を出す: 外側 − 枠 − 左の列 − 右パネルの余白。</summary>
     private static double BodyWidth(double windowWidth) => windowWidth - WindowLayout.ChromeWidth - WindowLayout.LeftColumnWidth - WindowLayout.RightPanelMarginWidth;
 
-    /// <summary>詳細画面(本物の <see cref="DetailView"/>)を、その幅で配置し、画像に使える幅(画像の欄 − 画像の余白)を測る。</summary>
-    private static (double HostWidth, double ImageWidth) MeasureDetailImage(double bodyWidth)
+    /// <summary>外側の幅で詳細画面を開いたとき、画像に使える幅(画像の欄 − 画像の余白)を、本物の組み立てで測る。</summary>
+    private static async Task<double> MeasureDetailImageWidthAsync(double outerWidth, double outerHeight)
     {
-        var view = new DetailView { Visibility = Visibility.Visible };
-        FontSetup(view);
-        view.Measure(new Size(bodyWidth, 600));
-        view.Arrange(new Rect(0, 0, bodyWidth, 600));
-        view.UpdateLayout();
-        Border host = VisualWalk(view).OfType<Border>().First(b => b.Background is SolidColorBrush c && c.Color == Color.FromRgb(0x1E, 0x1E, 0x1E));
-        return (host.ActualWidth, Math.Max(0, host.ActualWidth - WindowLayout.DetailImagePadding));
+        MainLayoutHarness h = MainLayoutHarness.Create(outerWidth, outerHeight);
+        await h.Results.OpenDetailAsync(MainLayoutHarness.Hash(0));
+        h.Layout();
+        return Math.Max(0, h.ImageHost().ActualWidth - WindowLayout.DetailImagePadding);
+    }
+
+    /// <summary>外側の幅から決まる、画像に使える幅(詳細画面の幅 = 外側 − 枠。そこから右の欄・内側の余白・画像の余白を引く)。</summary>
+    private static double ExpectedImageWidth(double outerWidth) =>
+        outerWidth - WindowLayout.ChromeWidth - WindowLayout.DetailSideWidth - WindowLayout.DetailInnerMarginWidth - WindowLayout.DetailImagePadding;
+
+    [Fact]
+    public async Task At_the_minimum_window_width_the_detail_image_is_at_least_as_wide_as_a_list_thumbnail()
+    {
+        await StaDispatcher.RunAsync(async () =>
+        {
+            double atMin = await MeasureDetailImageWidthAsync(WindowLayout.MinWindowWidth, WindowLayout.MinWindowHeight);
+            Assert.True(atMin >= WindowLayout.ThumbnailWidth, $"最小の幅 {WindowLayout.MinWindowWidth} で、詳細画面の画像に使える幅 {atMin} が、一覧のサムネイルの幅 {WindowLayout.ThumbnailWidth} に足りない");
+        });
     }
 
     [Fact]
-    public async Task At_the_minimum_window_width_the_detail_image_is_at_least_as_wide_as_a_list_thumbnail_and_the_minimum_is_tight()
+    public async Task The_detail_image_width_follows_from_the_outer_width_minus_the_frame()
     {
-        await StaDispatcher.RunAsync(() =>
+        await StaDispatcher.RunAsync(async () =>
         {
-            double atMin = MeasureDetailImage(BodyWidth(WindowLayout.MinWindowWidth)).ImageWidth;
-            Assert.True(atMin >= WindowLayout.ThumbnailWidth, $"最小の幅 {WindowLayout.MinWindowWidth} で、詳細画面の画像に使える幅 {atMin} が、一覧のサムネイルの幅 {WindowLayout.ThumbnailWidth} に足りない");
-
-            // 最小の幅は、ぎりぎり(1px 狭いと足りない)。必要以上に上げていない
-            double oneNarrower = MeasureDetailImage(BodyWidth(WindowLayout.MinWindowWidth - 1)).ImageWidth;
-            Assert.True(oneNarrower < WindowLayout.ThumbnailWidth, $"最小の幅より 1px 狭くても、画像に使える幅 {oneNarrower} が足りている(最小の幅が大きすぎる)");
-
-            // 既定の窓(1180)でも、画像は一覧のサムネイルより大きい
-            Assert.True(MeasureDetailImage(BodyWidth(1180)).ImageWidth > WindowLayout.ThumbnailWidth);
-            return Task.CompletedTask;
+            foreach ((double w, double h) in new[] { (WindowLayout.MinWindowWidth, WindowLayout.MinWindowHeight), (1180.0, 760.0), (1920.0, 1080.0) })
+                Assert.Equal(ExpectedImageWidth(w), await MeasureDetailImageWidthAsync(w, h));
         });
     }
 
     [Fact]
     public async Task At_the_minimum_window_size_the_detail_image_and_two_rows_of_the_folder_list_are_both_visible()
     {
-        await StaDispatcher.RunAsync(() =>
+        await StaDispatcher.RunAsync(async () =>
         {
             // 幅: 詳細の画像
-            Assert.True(MeasureDetailImage(BodyWidth(WindowLayout.MinWindowWidth)).ImageWidth >= WindowLayout.ThumbnailWidth);
+            Assert.True(await MeasureDetailImageWidthAsync(WindowLayout.MinWindowWidth, WindowLayout.MinWindowHeight) >= WindowLayout.ThumbnailWidth);
 
             // 高さ: フォルダ一覧が、1 行 3 行分(長いパスが 2 行に折り返す行 + 枚数)の見本の 2 行以上
             var panel = new IndexPanel(new TestLog(), _ => { }, () => false, new FakeShell());
@@ -77,16 +80,7 @@ public sealed class MinWindowSizeTests
             root.UpdateLayout();
             double visible = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(list).Height - list.BorderThickness.Top - list.BorderThickness.Bottom;   // 枠の内側(行が見える高さ。一覧に 1px の枠がある)
             Assert.True(visible >= 2 * sample.ActualHeight, $"最小の窓で、フォルダ一覧の見える高さ {visible}px が、2 行分({2 * sample.ActualHeight}px)に足りない");
-            return Task.CompletedTask;
         });
-    }
-
-    [Fact]
-    public void The_minimum_width_is_the_sum_of_its_parts()
-    {
-        // 最小の幅 = 枠 + 左の列 + 右パネルの余白 + 詳細の右の欄 + 詳細の内側の余白 + 画像の余白 + サムネイルの幅(定数どうしの整合。どれかを替えたら、最小の幅も替える)
-        double sum = WindowLayout.ChromeWidth + WindowLayout.LeftColumnWidth + WindowLayout.RightPanelMarginWidth + WindowLayout.DetailSideWidth + WindowLayout.DetailInnerMarginWidth + WindowLayout.DetailImagePadding + WindowLayout.ThumbnailWidth;
-        Assert.Equal(WindowLayout.MinWindowWidth, sum);
     }
 
     [Fact]
@@ -111,57 +105,31 @@ public sealed class MinWindowSizeTests
         return grid.Columns;
     }
 
-    private static System.Collections.Generic.IEnumerable<DependencyObject> VisualWalk(DependencyObject root)
-    {
-        yield return root;
-        int n = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < n; i++)
-            foreach (DependencyObject x in VisualWalk(VisualTreeHelper.GetChild(root, i))) yield return x;
-    }
-
     // ---------------------------------------------------------------- 測定用(最小の窓の見た目の画像)
 
-    [Fact(Skip = "測定用(最小の幅)。手元で Skip を外して回すと、%TEMP% の min-window-shots に、最小の窓と既定の窓の外観(左パネル + 詳細画面。画像の欄は暗い四角)の PNG と、数字(numbers.txt)を書く。通常の回帰テストには入れない")]
+    [Fact(Skip = "測定用(最小の幅)。手元で Skip を外して回すと、%TEMP% の min-window-shots に、最小・既定・1920×1080 の窓の外観(詳細画面を開いたところ。画像の欄は暗い四角)の PNG と、数字(numbers.txt)を書く。通常の回帰テストには入れない")]
     public async Task Render_the_minimum_and_default_window_with_the_detail_view_offscreen()
     {
         string dir = Path.Combine(Path.GetTempPath(), "min-window-shots");
         Directory.CreateDirectory(dir);
         var numbers = new System.Text.StringBuilder();
-        await StaDispatcher.RunAsync(() =>
+        await StaDispatcher.RunAsync(async () =>
         {
-            foreach ((string name, double w, double h) in new[] { ("min", WindowLayout.MinWindowWidth, WindowLayout.MinWindowHeight), ("default", 1180.0, 760.0) })
+            foreach ((string name, double w, double h) in new[] { ("min", WindowLayout.MinWindowWidth, WindowLayout.MinWindowHeight), ("default", 1180.0, 760.0), ("fullhd", 1920.0, 1080.0) })
             {
-                double clientW = w - WindowLayout.ChromeWidth, clientH = h - WindowLayout.ChromeHeight;
-                var panel = new IndexPanel(new TestLog(), _ => { }, () => false, new FakeShell());
-                var detail = new DetailView { Visibility = Visibility.Visible, Margin = new Thickness(6, 12, 12, 12) };
-                var status = new StatusBarView();
-                status.ShowCoreStatus(new Ohanami.Core.CoreStatus(Ohanami.Core.CorePhase.Ready, null, true, 1030));
-                var main = new Grid();
-                main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(WindowLayout.LeftColumnWidth) });
-                main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                Grid.SetColumn(detail, 1);
-                main.Children.Add(panel);
-                main.Children.Add(detail);
-                var root = new Grid { Background = Brushes.White };
-                root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                Grid.SetRow(status, 1);
-                root.Children.Add(main);
-                root.Children.Add(status);
-                FontSetup(root);
-                root.Measure(new Size(clientW, clientH));
-                root.Arrange(new Rect(0, 0, clientW, clientH));
-                root.UpdateLayout();
-                Border host = VisualWalk(detail).OfType<Border>().First(b => b.Background is SolidColorBrush c && c.Color == Color.FromRgb(0x1E, 0x1E, 0x1E));
-                numbers.AppendLine($"{name}: 外側 {w}×{h} / 中 {clientW}×{clientH} / 画像の欄 {host.ActualWidth} / 画像に使える幅 {host.ActualWidth - WindowLayout.DetailImagePadding} / 一覧の列数 {ColumnsAt(w)}");
-                var bmp = new RenderTargetBitmap((int)clientW, (int)clientH, 96, 96, PixelFormats.Pbgra32);
-                bmp.Render(root);
+                MainLayoutHarness layout = MainLayoutHarness.Create(w, h);
+                layout.Root.Background = Brushes.White;
+                await layout.Results.OpenDetailAsync(MainLayoutHarness.Hash(0));
+                layout.Layout();
+                Border host = layout.ImageHost();
+                numbers.AppendLine($"{name}: 外側 {w}×{h} / 中 {layout.ClientWidth}×{layout.ClientHeight} / 画像の欄 {host.ActualWidth}×{host.ActualHeight} / 画像に使える幅 {host.ActualWidth - WindowLayout.DetailImagePadding} / 詳細画面の層 {layout.BoundsOf(layout.Results.DetailLayer)} / 一覧の欄(詳細を開く前の画像の欄の位置) {layout.BoundsOf(layout.Results.ResultGrid)} / 一覧の列数 {ColumnsAt(w)}");
+                var bmp = new RenderTargetBitmap((int)layout.ClientWidth, (int)layout.ClientHeight, 96, 96, PixelFormats.Pbgra32);
+                bmp.Render(layout.Root);
                 var enc = new PngBitmapEncoder();
                 enc.Frames.Add(BitmapFrame.Create(bmp));
                 using FileStream fs = File.Create(Path.Combine(dir, name + ".png"));
                 enc.Save(fs);
             }
-            return Task.CompletedTask;
         });
         File.WriteAllText(Path.Combine(dir, "numbers.txt"), numbers.ToString(), new System.Text.UTF8Encoding(false));
         Assert.True(File.Exists(Path.Combine(dir, "min.png")));

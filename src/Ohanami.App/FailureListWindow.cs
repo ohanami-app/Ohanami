@@ -22,7 +22,7 @@ namespace Ohanami.App;
 /// <item>操作は <c>perform</c>(<see cref="IndexPanel"/> が Core につなぐ)に渡すだけ。窓は Core を知らない(見せる側)。二度押しは、<see cref="Apply"/> で届く「操作の最中」で押せなくなる(押す前にも、いまの可否を確かめる)。</item>
 /// </list>
 /// 一覧の中身は <paramref name="load"/>(Core の <c>Images.ListFailuresAsync</c> / <c>Indexer.ListSkippedAsync</c> / <c>Indexer.ListMissingImagesAsync</c> を App が結ぶ)で読む。
-/// 「詳細」を押すと、この画面を閉じて <see cref="OpenDetailRequested"/> を起こす(詳細画面はメインの画面の上に重ねる作りなので、この画面は閉じる)。語は <see cref="ProcessingWords"/> から。
+/// 「詳細」を押すと、この画面を閉じて <see cref="OpenDetailRequested"/> を起こす(詳細画面はメインの窓の全面に重ねる作りなので、この画面は閉じる)。語は <see cref="ProcessingWords"/> から。
 /// </summary>
 internal sealed class FailureListWindow : Window
 {
