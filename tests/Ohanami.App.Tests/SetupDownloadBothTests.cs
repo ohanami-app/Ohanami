@@ -171,10 +171,10 @@ public sealed class SetupDownloadBothTests
             Task run = w.StartDownloadAsync(Both);
 
             string[] embedding = EmbeddingFiles, vlm = VlmFiles;
-            fake.Report(P(ModelDownloadPhase.Downloading, embedding[0], 1, 1_000_000_000));
+            fake.Report(P(ModelDownloadPhase.Downloading, embedding[0], 0, 1_000_000_000));
             Assert.Equal(SetupWords.FileStateWhileDownloading(ModelDownloadPhase.Downloading), w.FileStatesForTests(ModelSets.FeatureVector)[0]);
 
-            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i + 1, 4_579_405_088));
+            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_579_405_088));
             Assert.Equal(SetupWords.SetComplete, w.SetStateForTests(ModelSets.FeatureVector));      // 特徴ベクトル検索のモデルは、準備完了
             Assert.NotEqual(SetupWords.SetComplete, w.SetStateForTests(ModelSets.Vlm));
             Assert.Empty(w.AreaTextsForTests(ModelSets.FeatureVector));                             // そろった区画の、押せない「ダウンロード」は残さない
@@ -182,8 +182,9 @@ public sealed class SetupDownloadBothTests
             Assert.Equal([SetupWords.BusyReason], w.AreaTextsForTests(ModelSets.Vlm));              // まだの区画は、そのまま
             Assert.Equal([SetupWords.CancelLabel], w.AreaButtonsForTests(Both));                    // 「2 つとも」の領域は、取っている間は進み具合と「中止」
 
-            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 5, 1_000_000_000));
+            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 4, 1_000_000_000));
             Assert.Equal(SetupWords.FileStateWhileDownloading(ModelDownloadPhase.Downloading), w.FileStatesForTests(ModelSets.Vlm)[0]);
+            Assert.Contains("(5 / 6 ファイル)", w.AreaTextsForTests(Both)[0]);   // 5 番目のファイル(Core の番号は 0 始まり)
 
             fake.Fail(Fail(ModelDownloadFailure.Network, vlm[0]));   // 後始末
             await run;
@@ -237,9 +238,9 @@ public sealed class SetupDownloadBothTests
             Task run = w.StartDownloadAsync(ModelSets.FeatureVector);
             string[] embedding = EmbeddingFiles;
 
-            for (int i = 0; i < embedding.Length - 1; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i + 1, 4_000_000_000, 4_579_405_088));
+            for (int i = 0; i < embedding.Length - 1; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_000_000_000, 4_579_405_088));
             Assert.Equal([SetupWords.BusyReason], w.AreaTextsForTests(Both));   // まだ 1 つ残っている間は、押せないだけ
-            fake.Report(P(ModelDownloadPhase.Completed, embedding[^1], embedding.Length, 4_579_405_088, 4_579_405_088));
+            fake.Report(P(ModelDownloadPhase.Completed, embedding[^1], embedding.Length - 1, 4_579_405_088, 4_579_405_088));
 
             Assert.Empty(w.AreaTextsForTests(Both));
             Assert.Empty(w.AreaButtonsForTests(Both));
@@ -258,7 +259,7 @@ public sealed class SetupDownloadBothTests
             var fake = new FakeDownloads();
             SetupWindow w = SetupWindowTests.NewWindow(SetupWindowTests.BothMissing(), downloads: fake);
             Task run = w.StartDownloadAsync(Both);
-            fake.Report(P(ModelDownloadPhase.Downloading, EmbeddingFiles[0], 1, 1_000_000_000));
+            fake.Report(P(ModelDownloadPhase.Downloading, EmbeddingFiles[0], 0, 1_000_000_000));
 
             SetupWindowTests.Click(SetupWindowTests.ButtonOf(w, SetupWords.CancelLabel));
             Assert.True(fake.LastToken.IsCancellationRequested);
@@ -315,8 +316,8 @@ public sealed class SetupDownloadBothTests
             SetupWindow w = SetupWindowTests.NewWindow(current, () => current, downloads: fake);
             Task run = w.StartDownloadAsync(Both);
             string[] embedding = EmbeddingFiles, vlm = VlmFiles;
-            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i + 1, 4_579_405_088));
-            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 5, 5_000_000_000));
+            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_579_405_088));
+            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 4, 5_000_000_000));
 
             current = SetupWindowTests.VlmOnlyMissing();   // 置き場には、特徴ベクトル検索のモデルが置かれている
             fake.Fail(Fail(ModelDownloadFailure.HttpStatus, vlm[0]));
@@ -342,8 +343,8 @@ public sealed class SetupDownloadBothTests
             SetupWindow w = SetupWindowTests.NewWindow(current, () => current, downloads: fake);
             Task run = w.StartDownloadAsync(Both);
             string[] embedding = EmbeddingFiles, vlm = VlmFiles;
-            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i + 1, 4_579_405_088));
-            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 5, 5_000_000_000));
+            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_579_405_088));
+            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 4, 5_000_000_000));
 
             current = SetupWindowTests.VlmOnlyMissing();
             SetupWindowTests.Click(SetupWindowTests.ButtonOf(w, SetupWords.CancelLabel));

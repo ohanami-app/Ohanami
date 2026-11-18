@@ -87,14 +87,14 @@ public sealed class SetupBothShotTests
             DateTime t = t0;
             w.Now = () => t;
             Task run = w.StartDownloadAsync(Both);
-            fake.Report(P(ModelDownloadPhase.Downloading, embedding[0], 1, 900_000_000));
+            fake.Report(P(ModelDownloadPhase.Downloading, embedding[0], 0, 900_000_000));
             t = t.AddSeconds(2);
-            fake.Report(P(ModelDownloadPhase.Downloading, embedding[0], 1, 1_000_000_000));
+            fake.Report(P(ModelDownloadPhase.Downloading, embedding[0], 0, 1_000_000_000));
             Shot(w, "2-bulk-first-model");
-            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i + 1, 4_579_405_088));
-            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 5, 5_000_000_000));
+            for (int i = 0; i < embedding.Length; i++) fake.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_579_405_088));
+            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 4, 5_000_000_000));
             t = t.AddSeconds(2);
-            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 5, 5_100_000_000));
+            fake.Report(P(ModelDownloadPhase.Downloading, vlm[0], 4, 5_100_000_000));
             Shot(w, "3-bulk-second-model");
             current = SetupWindowTests.VlmOnlyMissing();   // 置き場には、1 つ目のモデルが置いてある(確かめ直した画面)
             fake.Fail(Fail(ModelDownloadFailure.HttpStatus, vlm[0]));
@@ -106,7 +106,7 @@ public sealed class SetupBothShotTests
             var fc = new FakeDownloads { Free = 312_400_000_000 };
             SetupWindow wc = SetupWindowTests.NewWindow(SetupWindowTests.BothMissing(), downloads: fc);
             Task rc = wc.StartDownloadAsync(Both);
-            fc.Report(P(ModelDownloadPhase.Downloading, embedding[0], 1, 1_000_000_000));
+            fc.Report(P(ModelDownloadPhase.Downloading, embedding[0], 0, 1_000_000_000));
             SetupWindowTests.Click(SetupWindowTests.ButtonOf(wc, SetupWords.CancelLabel));
             await rc;
             Shot(wc, "4-after-cancel");
@@ -140,7 +140,7 @@ public sealed class SetupBothShotTests
             var f8 = new FakeDownloads { Free = 312_400_000_000 };
             SetupWindow w8 = SetupWindowTests.NewWindow(SetupWindowTests.BothMissing(), downloads: f8);
             Task r8 = w8.StartDownloadAsync(ModelSets.Vlm);
-            f8.Report(P(ModelDownloadPhase.Downloading, vlm[0], 1, 2_000_000_000, 6_190_000_000));
+            f8.Report(new ModelDownloadProgress(ModelDownloadPhase.Downloading, vlm[0], 0, 2, 2_000_000_000, 6_190_000_000));
             Shot(w8, "8-one-model-downloading-bulk-disabled");
             f8.Fail(Fail(ModelDownloadFailure.Network, vlm[0]));
             await r8;
