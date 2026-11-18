@@ -1,6 +1,8 @@
 # release: 配布物(self-contained の zip)を作る
 
-手で動かす PowerShell の道具。zip を GitHub などに上げることはしない(上げるのは人)。決定の理由は `docs/adr/0042-release-layout-and-allowed-files.md`。
+手で動かす PowerShell の道具。zip を GitHub などに上げることはしない。配布の zip は、GitHub Actions(`.github/workflows/release.yml`)が、ランナーで公開の木から作り、下書きの Release にする(決定は `docs/adr/0048-release-built-by-actions.md`)。手元で `Publish-Release.ps1` を動かすのは、通し稽古と、許可の表の更新(`-ProposeTable`)のため。置き方と表の決定の理由は `docs/adr/0042-release-layout-and-allowed-files.md`。
+
+`tools/release/notes/<版>.md` は、その版の Release の文の下書き(版は `src/Directory.Build.props` の `Version`)。ワークフローが、zip の名前・大きさ・SHA-256・コミットを後ろに足して、下書きの Release の文にする。文に `@` は書かない。
 
 | ファイル | 中身 |
 |---|---|
