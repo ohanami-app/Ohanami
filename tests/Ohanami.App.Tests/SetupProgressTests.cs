@@ -307,7 +307,7 @@ public sealed class SetupProgressTests
             var fake = new FakeDownloads();
             SetupState current = SetupWindowTests.BothMissing();
             SetupWindow w = SetupWindowTests.NewWindow(current, () => current, downloads: fake);
-            double[] three = [SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight];   // 「2 つとも」+ 区画ごとの 2 つ
+            double[] three = [SetupWindow.BothAreaHeight, SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight];   // 「2 つとも」+ 区画ごとの 2 つ
             Assert.Equal(three, AreaHeights(w));
 
             Task run = w.StartDownloadAsync(ModelSets.FeatureVector);
@@ -342,7 +342,8 @@ public sealed class SetupProgressTests
         host.Measure(new Size(820, double.PositiveInfinity));
         host.Arrange(new Rect(0, 0, 820, Math.Ceiling(host.DesiredSize.Height)));
         host.UpdateLayout();
-        double[] result = [.. Descendants(root).OfType<StackPanel>().Where(p => p.Height == SetupWindow.DownloadAreaHeight).Select(p => p.ActualHeight)];
+        double[] result = [.. Descendants(root).OfType<FrameworkElement>()
+            .Where(p => (p is StackPanel && p.Height == SetupWindow.DownloadAreaHeight) || (p is Grid && p.Height == SetupWindow.BothAreaHeight)).Select(p => p.ActualHeight)];
         host.Child = null;
         w.Content = root;
         return result;
@@ -411,14 +412,23 @@ public sealed class SetupProgressTests
             host.Measure(new Size(820, double.PositiveInfinity));
             host.Arrange(new Rect(0, 0, 820, Math.Ceiling(host.DesiredSize.Height)));
             host.UpdateLayout();
-            TextBlock plan = Descendants(root).OfType<TextBlock>().First(t => t.Text.StartsWith("押すと、", StringComparison.Ordinal) && t.Text.Contains("前回の続き", StringComparison.Ordinal));
-            var probe = new TextBlock { Text = plan.Text, TextWrapping = TextWrapping.Wrap, FontFamily = plan.FontFamily, FontSize = plan.FontSize, Width = plan.ActualWidth };
-            probe.Measure(new Size(plan.ActualWidth, double.PositiveInfinity));
+            // 区画の領域(全幅)と、「2 つとも」の領域(ボタンの左の、せまい幅)の、すべての見積もりの文
+            TextBlock[] plans = [.. Descendants(root).OfType<TextBlock>().Where(t => t.Text.StartsWith("押すと、", StringComparison.Ordinal) && t.Text.Contains("前回の続き", StringComparison.Ordinal))];
+            var probes = plans.Select(plan =>
+            {
+                var probe = new TextBlock { Text = plan.Text, TextWrapping = TextWrapping.Wrap, FontFamily = plan.FontFamily, FontSize = plan.FontSize, Width = plan.ActualWidth };
+                probe.Measure(new Size(plan.ActualWidth, double.PositiveInfinity));
+                return (plan.ActualWidth, probe.DesiredSize.Height);
+            }).ToArray();
             host.Child = null;
             w.Content = root;
 
-            Assert.True(plan.ActualWidth > 600, $"見積もりの文の幅 {plan.ActualWidth}");
-            Assert.True(probe.DesiredSize.Height <= 2 * SetupWindow.AreaLineHeight, $"見積もりの文が {probe.DesiredSize.Height}px 要る(2 行 = {2 * SetupWindow.AreaLineHeight}px に収まらず、切れる)");
+            Assert.Equal(3, plans.Length);   // 「2 つとも」+ 区画ごとの 2 つ
+            foreach ((double width, double height) in probes)
+            {
+                Assert.True(width > 450, $"見積もりの文の幅 {width}");
+                Assert.True(height <= 2 * SetupWindow.AreaLineHeight, $"見積もりの文が {height}px 要る(2 行 = {2 * SetupWindow.AreaLineHeight}px に収まらず、切れる)");
+            }
             return Task.CompletedTask;
         });
     }

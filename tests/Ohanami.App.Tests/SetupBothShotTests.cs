@@ -58,12 +58,14 @@ public sealed class SetupBothShotTests
         Assert.SkipUnless(Environment.GetEnvironmentVariable("OHANAMI_SETUP_SHOTS") == "1", "環境変数 OHANAMI_SETUP_SHOTS=1 が無い(%TEMP% の setup-both-shots に、「2 つともダウンロード」の各場面の PNG と、窓の高さ(heights.tsv)を書く手元専用の測定)");
         string dir = Path.Combine(Path.GetTempPath(), "setup-both-shots");
         Directory.CreateDirectory(dir);
+        // 別の案の絵を並べて比べるための、名前の接尾辞(例: -compact)
+        string suffix = Environment.GetEnvironmentVariable("OHANAMI_SETUP_SHOTS_SUFFIX") ?? "";
         var lines = new List<string>();
         await StaDispatcher.RunAsync(async () =>
         {
             void Shot(SetupWindow w, string name)
             {
-                SetupWindowTests.Save(w, Path.Combine(dir, name + ".png"));
+                SetupWindowTests.Save(w, Path.Combine(dir, name + suffix + ".png"));
                 string area = string.Join(" | ", new[] { Both, ModelSets.FeatureVector, ModelSets.Vlm }
                     .Select(k => $"[{k}] " + string.Join(" / ", w.AreaTextsForTests(k).Concat(w.AreaButtonsForTests(k)))));
                 lines.Add($"{name}\t{ContentHeight(w):0.0}\t{area}");
@@ -121,6 +123,21 @@ public sealed class SetupBothShotTests
             Shot(wf, "5a-after-failure-first");
             wf.Close();
 
+            // 5c: 長い失敗の文(長いファイル名・長い接続先)
+            var fl = new FakeDownloads { Free = 312_400_000_000 };
+            SetupWindow wl = SetupWindowTests.NewWindow(SetupWindowTests.BothMissing(), downloads: fl);
+            Task rl = wl.StartDownloadAsync(Both);
+            fl.Fail(new ModelDownloadException(ModelDownloadFailure.HttpStatus, "Core のメッセージ(テスト)", embedding[2], 503, "download-mirror-01.eu-central.example.test", null, null));
+            await rl;
+            Shot(wl, "5c-after-failure-long");
+            wl.Close();
+
+            // 6c: 置き場が別のドライブで、片方が足りない(ドライブごとの空きを言う長い文)
+            SetupWindow wd = SetupWindowTests.NewWindow(SetupDownloadBothTests.OnDrives(@"C:\ohanami-test\a", @"Z:\ohanami-test\b"),
+                downloads: new FakeDownloads { FreeOf = d => d.StartsWith("Z:", StringComparison.OrdinalIgnoreCase) ? 6_000_000_000 : 5_000_000_000 });
+            Shot(wd, "6c-no-space-two-drives");
+            wd.Close();
+
             // 6: 空きが足りない(合わせた量に足りない。それぞれには足りる)
             SetupWindow wn = SetupWindowTests.NewWindow(SetupWindowTests.BothMissing(), downloads: new FakeDownloads { Free = 8_000_000_000 });
             Shot(wn, "6-no-space-for-both");
@@ -146,7 +163,7 @@ public sealed class SetupBothShotTests
             await r8;
             w8.Close();
         });
-        File.WriteAllLines(Path.Combine(dir, "heights.tsv"), lines);
+        File.WriteAllLines(Path.Combine(dir, $"heights{suffix}.tsv"), lines);
         Assert.True(Directory.GetFiles(dir, "*.png").Length >= 10);
     }
 }

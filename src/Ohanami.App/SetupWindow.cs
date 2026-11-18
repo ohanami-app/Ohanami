@@ -497,6 +497,9 @@ internal sealed class SetupWindow : Window
     /// <summary>ダウンロードの領域の高さ(文の段 + ボタンの行。余白は含まない)。どの場面でも同じ。</summary>
     internal const double DownloadAreaHeight = AreaTextLines * AreaLineHeight + AreaButtonRowHeight;
 
+    /// <summary>「2 つとも」の領域の高さ(文の段だけ。ボタンは文の右に並べる)。どの場面でも同じ。</summary>
+    internal const double BothAreaHeight = AreaTextLines * AreaLineHeight;
+
     /// <summary>1 行の高さを固定した文字(折り返すのは <paramref name="lines"/> が 2 以上のときだけ。入りきらなければ末尾を「…」で切る)。</summary>
     private static TextBlock AreaText(int lines, Brush? foreground = null)
     {
@@ -525,12 +528,12 @@ internal sealed class SetupWindow : Window
     /// </summary>
     private UIElement BothSection() => new Border
     {
-        Child = DownloadArea(BothSets), Padding = new Thickness(14, 4, 14, 2), Margin = new Thickness(0, 0, 0, 12),
+        Child = DownloadArea(BothSets), Padding = new Thickness(14, 8, 14, 8), Margin = new Thickness(0, 0, 0, 12),
         Background = AppColors.ListSurface, BorderBrush = AppColors.ListBorder, BorderThickness = new Thickness(1),
     };
 
     /// <summary>
-    /// ダウンロードの領域(区画の下と、「2 つとも」の領域。<paramref name="sets"/> は、その領域が取る組で、領域の鍵)。<b>高さは、場面によらず一定</b>(<see cref="DownloadAreaHeight"/>)。文の段(3 行)とボタンの行の 2 段で、場面ごとに、同じ段の中身だけを替える。
+    /// ダウンロードの領域(区画の下と、「2 つとも」の領域。<paramref name="sets"/> は、その領域が取る組で、領域の鍵)。<b>高さは、場面によらず一定</b>(区画の領域は <see cref="DownloadAreaHeight"/>、「2 つとも」の領域は <see cref="BothAreaHeight"/>)。区画の領域は文の段(3 行)の下にボタンの行を置き、「2 つとも」の領域は文の段の右にボタンを並べる。場面ごとに、同じ段の中身だけを替える。
     /// <list type="table">
     /// <item><term>押す前</term><description>文: 見積もり(何を・どこから・どこへ・空き) / ボタン: 「ダウンロード」</description></item>
     /// <item><term>失敗の直後</term><description>文: 失敗の理由(平らな文。詳細はヒント) + 手で置く方法 / ボタン: 「ダウンロード」(押し直せる)</description></item>
@@ -542,12 +545,32 @@ internal sealed class SetupWindow : Window
     /// </summary>
     private UIElement DownloadArea(ModelSets sets)
     {
-        var area = new StackPanel { Margin = new Thickness(0, 6, 0, 4), Height = DownloadAreaHeight };
+        // 「2 つとも」の領域は、文を左、ボタンを右に並べる(高さは、文の段だけ)。区画の領域は、文の段の下にボタンの行を置く
+        bool sideBySide = sets == BothSets;
         var text = new StackPanel { Height = AreaTextLines * AreaLineHeight };
-        var buttons = new Grid { Height = AreaButtonRowHeight };
+        var buttons = new Grid();
+        UIElement area;
+        if (sideBySide)
+        {
+            var row = new Grid { Height = BothAreaHeight };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            buttons.Margin = new Thickness(16, 0, 0, 0);
+            buttons.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(buttons, 1);
+            row.Children.Add(text);
+            row.Children.Add(buttons);
+            area = row;
+        }
+        else
+        {
+            buttons.Height = AreaButtonRowHeight;
+            var column = new StackPanel { Margin = new Thickness(0, 6, 0, 4), Height = DownloadAreaHeight };
+            column.Children.Add(text);
+            column.Children.Add(buttons);
+            area = column;
+        }
         _areaParts[sets] = (text, buttons);
-        area.Children.Add(text);
-        area.Children.Add(buttons);
 
         if (_active == sets)
         {

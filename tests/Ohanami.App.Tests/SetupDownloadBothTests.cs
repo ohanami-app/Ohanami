@@ -84,7 +84,7 @@ public sealed class SetupDownloadBothTests
 
     // ---------------------------------------------------------------- 空き(置き場のドライブごと)
 
-    private static SetupState OnDrives(string embeddingDirectory, string vlmDirectory)
+    internal static SetupState OnDrives(string embeddingDirectory, string vlmDirectory)
     {
         SetupState s = SetupWindowTests.BothMissing();
         return new SetupState(s.Embedding with { Directory = embeddingDirectory }, s.Vlm with { Directory = vlmDirectory });
