@@ -46,7 +46,7 @@ internal static class ModelCatalog
     /// 上のリポジトリのコミット(40 桁)。ファイル(<see cref="Current"/> の 4 つ。サイズと SHA-256 は定義と同じ)を上げたコミットで、
     /// ダウンロードは、毎回このコミットを指す(あとから上書きされても、同じ中身が取れる)。
     /// </summary>
-    public const string HfRevision = "32f87634e7700a4267cef3ffe700b10fe077112f";
+    public const string HfRevision = "2fffd6544cbb7b1bfcde13e3f25d3c7c11911043";
 
     /// <summary>
     /// 取得元のリポジトリの画面の URL。<paramref name="revision"/> を渡すと、そのコミットのファイル一覧(<c>/tree/&lt;コミット&gt;</c>)、無ければリポジトリの最初の画面。

@@ -782,7 +782,7 @@ public sealed class ModelDownloaderTests
         Assert.Matches("^[0-9a-f]{40}$", VlmCatalog.HfRevision);
         Assert.NotEqual(new string('0', 40), ModelCatalog.HfRevision);
         Assert.NotEqual(new string('0', 40), VlmCatalog.HfRevision);
-        Assert.Equal("32f87634e7700a4267cef3ffe700b10fe077112f", ModelCatalog.HfRevision);       // ohanami-app/siglip2-so400m-patch16-384-onnx に上げた 1 回のコミット
+        Assert.Equal("2fffd6544cbb7b1bfcde13e3f25d3c7c11911043", ModelCatalog.HfRevision);       // ohanami-app/siglip2-so400m-patch16-384-onnx に上げた 1 回のコミット
     }
 
     [Fact]
