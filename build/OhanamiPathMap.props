@@ -8,9 +8,14 @@
     Release のときだけ効かせる。Debug は、F5 のデバッガがソースの場所を pdb のパスから探し、テストの失敗のスタックトレースの
     「ファイル:行」を IDE が開けるように、実際のパスのままにする(Debug の出力は配布しない)。
     効いているかは、tools/release/Publish-Release.ps1 が、配布物のすべてのファイルを調べて確かめる。
+
+    SourceLink(.NET の SDK が、git の remote が GitHub のときに、pdb に書く「ソースの場所の対応」)は切る。pdb に、ビルドした PC の絶対パスと
+    リポジトリの URL が入り、PathMap では置き換わらない。pdb のチェックサムは DLL に入るので、ビルドした場所によって DLL のバイト列が変わる
+    (手元とランナーで、Ohanami.Core.dll・Ohanami.App.dll が一致しない)。pdb は配布しないので、SourceLink は要らない。
   -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PathMap>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..'))=/_/</PathMap>
+    <EnableSourceLink>false</EnableSourceLink>
   </PropertyGroup>
 
 </Project>

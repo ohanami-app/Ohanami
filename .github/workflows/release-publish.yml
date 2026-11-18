@@ -1,0 +1,77 @@
+# release.yml が作った下書きの Release を、公開する。それだけをする(zip は作らない)。
+# 下書きの文と zip を、人が GitHub の画面で確かめてから、手で動かす。main からだけ動く。
+# 決定の理由は docs/adr/0048-release-built-by-actions.md。
+name: release-publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# release.yml と、同時に動かさない。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  publish:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: main からだけ動く
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') {
+            throw "main 以外からは動かさない(今の ref: $env:GITHUB_REF)"
+          }
+
+      - name: 木を取り出す
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: .NET SDK を入れる
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: 版を読む
+        run: |
+          $v = (dotnet msbuild src/Ohanami.App -getProperty:Version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "版を読めなかった(dotnet msbuild の終了コード $LASTEXITCODE)" }
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "版の形が x.y.z でない: '$v'" }
+          "OHANAMI_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "版: $v(タグ: v$v)"
+
+      - name: 下書きの Release を公開する
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v$($env:OHANAMI_VERSION)"
+          # 100 個まで(下書きも含む)。それ以上に増えたら、ページ送りを足す。
+          $json = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "Release の一覧を取れなかった" }
+          $same = @(@($json | ConvertFrom-Json) | Where-Object { $_.tag_name -eq $tag })
+          if ($same.Count -eq 0) { throw "$tag の Release が無い(release.yml で、下書きを作る)" }
+          if ($same.Count -gt 1) { throw "$tag の Release が $($same.Count) 個ある。調べてから、手で直す。" }
+          $draft = $same[0]
+          if (-not $draft.draft) { throw "$tag の Release は、すでに公開済み" }
+          $target = $draft.target_commitish
+          Write-Host "公開する下書き: id $($draft.id)、対象のコミット $target"
+          # 対象がブランチの名前だと、公開の時点のブランチの先頭にタグが付いてしまう。コミットの SHA だけを通す。
+          if ($target -notmatch '^[0-9a-f]{40}$') { throw "下書きの対象が、コミットの SHA でない: '$target'" }
+
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "gh release edit が失敗した(終了コード $LASTEXITCODE)" }
+
+          # 公開で作られたタグが、下書きの対象のコミットを指すこと
+          $ref = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" | ConvertFrom-Json
+          Write-Host "タグ $tag の指すコミット: $($ref.object.sha)(下書きの対象: $target)"
+          if ($ref.object.sha -ne $target) { throw "タグ $tag が、下書きの対象のコミットを指していない" }

@@ -1,0 +1,174 @@
+# 配布の zip を、GitHub のランナーで、公開の木から作る。Release(下書き)を作るのも、このワークフローである。
+# 決定の理由は docs/adr/0048-release-built-by-actions.md。
+# 手で動かす。main からだけ動く。入力の「下書きを作るか」が false の実行は、通し稽古(zip を作るところまで。Release は作らない)。
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 下書きの Release を作る(false なら、通し稽古で、Release は作らない)
+        type: boolean
+        default: false
+
+# 既定は読むだけ。Release を作る権限(contents: write)は、下のジョブにだけ与える。
+permissions:
+  contents: read
+
+# 2 つのワークフロー(release・release-publish)を、同時に動かさない。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  build:
+    # windows-latest にしない(画像が替わって、Visual Studio 2022 が無くなる恐れがあるため。VC++ ランタイムの DLL を、画像の Visual Studio から取る: ADR 0044)。
+    runs-on: windows-2025
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: main からだけ動く
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') {
+            throw "main 以外からは動かさない(今の ref: $env:GITHUB_REF)"
+          }
+
+      # 資格情報(トークン)を、取り出した木の .git に残さない。gh を使う手順にだけ、環境変数で渡す。
+      - name: 木を取り出す
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ビルドするコミットを確かめる
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          if ($sha -ne $env:GITHUB_SHA) { throw "取り出したコミット($sha)が、起動したコミット($env:GITHUB_SHA)と違う" }
+          "OHANAMI_COMMIT=$sha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "ビルドするコミット: $sha"
+
+      # global.json の版(rollForward: disable)の SDK だけを入れる。キャッシュは使わない。
+      - name: .NET SDK を入れる
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: 版を読む
+        run: |
+          dotnet --version
+          $v = (dotnet msbuild src/Ohanami.App -getProperty:Version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "版を読めなかった(dotnet msbuild の終了コード $LASTEXITCODE)" }
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "版の形が x.y.z でない: '$v'" }
+          "OHANAMI_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "版: $v(タグ: v$v)"
+
+      - name: Release の文の下書きと、同じ版の Release を確かめる
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = $env:OHANAMI_VERSION
+          $notes = "tools/release/notes/$v.md"
+          if (-not (Test-Path -LiteralPath $notes)) { throw "Release の文の下書きが無い: $notes" }
+          if ((Get-Content -LiteralPath $notes -Raw -Encoding utf8).Contains('@')) { throw "Release の文に @ がある(誰かに通知が行かないよう、@ は書かない): $notes" }
+          # 100 個まで(下書きも含む)。それ以上に増えたら、ページ送りを足す。
+          $json = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "Release の一覧を取れなかった" }
+          $releases = @($json | ConvertFrom-Json)
+          $same = @($releases | Where-Object { $_.tag_name -eq "v$v" })
+          $published = @($same | Where-Object { -not $_.draft })
+          if ($published.Count -gt 0) { throw "同じ版(v$v)の公開済みの Release がある。版を上げる(src/Directory.Build.props)。" }
+          $refsJson = gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/v$v"
+          if ($LASTEXITCODE -ne 0) { throw "タグの一覧を取れなかった" }
+          $tagRefs = @($refsJson | ConvertFrom-Json | Where-Object { $_.ref -eq "refs/tags/v$v" })
+          if ($tagRefs.Count -gt 0) { throw "タグ v$v がすでにある(Release が無いタグ)。調べてから、手で消す。" }
+          Write-Host "同じ版の下書きの Release: $($same.Count) 個(下書きを作るときは、消して作り直す)"
+
+      - name: 空き容量(はじめ)
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -in 'C','D' } | ForEach-Object { '{0}: 空き {1:N1} GiB / 使用 {2:N1} GiB' -f $_.Name, ($_.Free / 1GB), ($_.Used / 1GB) }
+
+      # VC++ ランタイムの DLL は、画像の Visual Studio の再配布のフォルダから取る。許可の表と合わなければ、見つけたフォルダと版を出して止まる。
+      - name: runtime/ を置く
+        run: |
+          pwsh -NoProfile -File tools/runtime/Get-Runtime.ps1 -SkipTokenizer
+          if ($LASTEXITCODE -ne 0) { throw "Get-Runtime.ps1 が失敗した(終了コード $LASTEXITCODE)" }
+
+      - name: 配布物を作る
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'ohanami-release'
+          "OHANAMI_RELEASE_OUT=$out" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          pwsh -NoProfile -File tools/release/Publish-Release.ps1 -Version $env:OHANAMI_VERSION -OutputDirectory $out
+          if ($LASTEXITCODE -ne 0) { throw "Publish-Release.ps1 が失敗した(終了コード $LASTEXITCODE)" }
+
+      - name: DLL の版が、版とコミットに一致するか確かめる
+        run: |
+          $expected = "$($env:OHANAMI_VERSION)+$($env:OHANAMI_COMMIT)"
+          foreach ($name in 'Ohanami.Core.dll', 'Ohanami.App.dll') {
+            $path = Join-Path $env:OHANAMI_RELEASE_OUT "Ohanami\$name"
+            $actual = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($path).ProductVersion
+            Write-Host "$name の AssemblyInformationalVersion: $actual"
+            if ($actual -ne $expected) { throw "$name の版が違う。期待 $expected、実際 $actual" }
+          }
+
+      # Ohanami 自身の 5 ファイル(許可の表で SHA-256 を書かない物)。手元で作った値と比べるために残す。
+      - name: Ohanami 自身のファイルの SHA-256
+        run: |
+          $rows = Get-Content -LiteralPath tools/release/allowed-files.tsv -Encoding utf8 | Select-Object -Skip 1 | Where-Object { $_ } | ForEach-Object { , ($_ -split "`t") }
+          $own = @($rows | Where-Object { $_[2] -eq 'ohanami' } | ForEach-Object { $_[0] })
+          if ($own.Count -ne 5) { throw "表の ohanami の行が 5 でない: $($own.Count)" }
+          foreach ($rel in $own) {
+            $h = (Get-FileHash -LiteralPath (Join-Path $env:OHANAMI_RELEASE_OUT "Ohanami\$rel") -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Host "$h  $rel"
+          }
+
+      - name: 空き容量(おわり)
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -in 'C','D' } | ForEach-Object { '{0}: 空き {1:N1} GiB / 使用 {2:N1} GiB' -f $_.Name, ($_.Free / 1GB), ($_.Used / 1GB) }
+
+      - name: 下書きの Release を作る
+        if: ${{ inputs.draft }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = $env:OHANAMI_VERSION
+          $tag = "v$v"
+          $sha = $env:OHANAMI_COMMIT
+          $zip = Join-Path $env:OHANAMI_RELEASE_OUT "Ohanami-$v-win-x64.zip"
+          if (-not (Test-Path -LiteralPath $zip)) { throw "zip が無い: $zip" }
+
+          # 同じ版の下書きがあれば、消して作り直す(公開済みは、前の手順で止めてある)
+          $json = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "Release の一覧を取れなかった" }
+          $releases = @($json | ConvertFrom-Json)
+          foreach ($old in @($releases | Where-Object { $_.tag_name -eq $tag })) {
+            if (-not $old.draft) { throw "同じ版(v$v)の公開済みの Release がある" }
+            Write-Host "同じ版の下書き(id $($old.id))を消す"
+            gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/releases/$($old.id)"
+            if ($LASTEXITCODE -ne 0) { throw "下書きを消せなかった(id $($old.id))" }
+          }
+
+          $item = Get-Item -LiteralPath $zip
+          $sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $info = @(
+            '### ビルドの情報 / Build'
+            ''
+            "- zip: ``$($item.Name)``"
+            ('- 大きさ / Size: {0:N0} bytes ({1:N1} MiB)' -f $item.Length, ($item.Length / 1MB))
+            "- SHA-256: ``$sha256``"
+            "- ビルドしたコミット / Commit: ``$sha``"
+          ) -join "`n"
+          $body = (Get-Content -LiteralPath "tools/release/notes/$v.md" -Raw -Encoding utf8).TrimEnd() + "`n`n---`n`n" + $info + "`n"
+          if ($body.Contains('@')) { throw "Release の文に @ がある" }
+          $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          Set-Content -LiteralPath $notesFile -Value $body -Encoding utf8 -NoNewline
+
+          gh release create $tag --repo $env:GITHUB_REPOSITORY --draft --target $sha --title "Ohanami $v" --notes-file $notesFile $zip
+          if ($LASTEXITCODE -ne 0) { throw "gh release create が失敗した(終了コード $LASTEXITCODE)" }
+          Write-Host "下書きの Release を作った: $tag(対象のコミット $sha)"

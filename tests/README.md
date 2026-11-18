@@ -63,7 +63,7 @@ dotnet test --project tests/Ohanami.Core.Tests --filter-trait "Category=Private"
 | `OHANAMI_RUNTIME_DIR` | `runtime/` の場所。未指定ならリポジトリのルートの `runtime/`。App のビルドと、GPU のテストのビルドで使う。`Get-Runtime.ps1` も、これを見る |
 | `OHANAMI_GPU_TESTS` | `1` のとき、GPU のテストが動く。**ビルドにも効く**: `1` でビルドしたときだけ、テストの exe の隣に CUDA・cuDNN・VC++ ランタイムの DLL をコピーする(`build/OhanamiCudaRuntime.targets`) |
 
-## GPU のテストの実行手順(手元専用。CI は無い)
+## GPU のテストの実行手順(手元専用。テストを回す CI は無い。GitHub Actions は、配布の zip を作るだけ: ADR 0048)
 
 1. GPU を使う他のプロセス(llama-server など)を止める。VRAM は GPU 全体(`nvidia-smi`)で測るので、他のプロセスの変動が混ざる。
 2. 環境変数を設定して実行する(PowerShell)。

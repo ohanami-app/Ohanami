@@ -7,7 +7,7 @@ Ohanami をソースからビルドして、テストを回し、変更を出す
 | もの | 内容 |
 |---|---|
 | OS | Windows 11(64 ビット)。WPF のアプリなので、Windows 以外ではビルドできません |
-| .NET SDK | `global.json` が決める版(10.0.403 以上の 10.0.4xx) |
+| .NET SDK | `global.json` が決める版(10.0.404。これと同じ版だけが使えます) |
 | GPU | 通常のビルドとテストには要りません。アプリを動かす・GPU のテスト・検索のベンチには、NVIDIA の RTX 系(VRAM 8GB 以上)が要ります |
 | `runtime/` | 同梱する DLL(CUDA・cuDNN・VC++ ランタイム・llama.cpp)。Git に入れないので、自分で置きます(下) |
 | `models/` | モデルのファイル。Git に入れません。通常のテストが要るのは、トークナイザの 1 ファイルだけです(下) |
@@ -62,7 +62,7 @@ pwsh tools/runtime/Get-Runtime.ps1
 
 - **Core は UI に依存しない**(ADR 0002)。`Ohanami.Core` の TargetFramework は `net10.0`(`-windows` を付けない)で、`UseWPF` も `UseWindowsForms` も付けません。WPF の型を書くと、コンパイルが通りません(1 段目)。そのうえで、`CoreDependencyTests` が、Core のアセンブリが WPF・WinForms などの UI のアセンブリを参照していないこと(2 段目)と、csproj に `-windows` の TargetFramework や UI の指定が無いこと(3 段目)を確かめます。
 - **共通の設定は、`src/Directory.Build.props` と `tests/Directory.Build.props` にあります**。`Nullable` を有効、`ImplicitUsings` を無効(`using` は書きます)、`LangVersion` は `latest`、`TreatWarningsAsErrors` を有効にしています。警告を抑える `NoWarn` は入れません。直下に 1 つ置かず、`src/` と `tests/` に分けているのは、`spikes/`(使い捨ての検証コード。ソリューションに入っていない)のビルドの設定を変えないためです。`src/` の Release のビルドは、リポジトリのルートの絶対パスを `/_/` に置き換えます(`build/OhanamiPathMap.props` の `PathMap`。配る DLL・exe に、ビルドした PC のパスを残さないため)。Debug は置き換えないので、F5 とスタックトレースの行は、実際のパスのままです。
-- **SDK は `global.json` で固定します**(`latestPatch`。パッチの版までは進みます)。警告をエラーにしているので、新しい SDK のアナライザで警告が増えると、ビルドが落ちるためです。SDK の版を上げるときは、増えた警告を直してから上げます。`global.json` には、`dotnet test` が Microsoft.Testing.Platform で動くようにする指定(`test.runner`)も入っています。
+- **SDK は `global.json` で、1 つの版に固定します**(`rollForward` は `disable`。別の版の SDK では、ビルドが始まりません)。理由は 2 つあります。警告をエラーにしているので、新しい SDK のアナライザで警告が増えると、ビルドが落ちること。配布物の許可の表(`tools/release/allowed-files.tsv`)の .NET のランタイムの SHA-256 が、この版の SDK で作った値で、SDK が変わると全部食い違うことです。SDK の版を上げるときは、増えた警告を直し、`global.json` と許可の表を、同じ変更で直します(表の作り直しは `tools/release/README.md`)。`global.json` には、`dotnet test` が Microsoft.Testing.Platform で動くようにする指定(`test.runner`)も入っています。
 - **テストは xunit.v3 + Microsoft.Testing.Platform** です。`Microsoft.NET.Test.Sdk` と `xunit.runner.visualstudio` は参照していません(外しても、`dotnet test` で動くことを確かめました)。VSTest 経由で動かす道具(Rider など)で動かすには、この 2 つが要るかもしれません。その場合の設定は、未確認です。
 
 ## ビルドとテスト

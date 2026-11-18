@@ -36,6 +36,7 @@ tools/
   convert-siglip2/          SigLIP2 を元の重みから ONNX に変換する Python(リポジトリの外の venv で動かす)
   siglip2-reference/        テストの正解データを作る Python(同上)
   runtime/                  ビルドとテストに要る runtime/ のファイルと tokenizer.json を、一次の配布元から取って置く PowerShell(Get-Runtime.ps1)
+.github/workflows/          配布の zip を GitHub のランナーで作る・下書きの Release を公開するワークフロー(手で動かす。ADR 0048)
 build/                      ビルドの共通の部品(CUDA の DLL を実行ファイルの隣に置く。Release の PathMap でビルドした PC のパスを DLL に残さない)
 spikes/                     使い捨ての検証コード。ソリューションには入っていない
 models/                     モデルのファイル。`MANIFEST.tsv` 以外は Git に入れない

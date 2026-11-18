@@ -9,6 +9,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- アプリの版。配布の zip の名前・Release のタグ(v<版>)・DLL の版の情報は、ここから決まる。 -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
 </Project>
