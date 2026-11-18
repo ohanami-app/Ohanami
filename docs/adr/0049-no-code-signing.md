@@ -36,10 +36,9 @@ NVIDIA(CUDA・cuDNN)と Microsoft(VC++ ランタイム・.NET)の DLL には、�
 | 案 | 採らなかった理由 |
 |---|---|
 | SignPath Foundation(オープンソース向けの無料の署名) | 3 つの条件に当たる。①「The project may not contain any proprietary, non open-source component」(「System Libraries」は同梱してよい、とも書く)。zip に入れる NVIDIA の DLL(CUDA・cuDNN)は、NVIDIA の規約が、オープンソースのライセンスの対象にすることを禁じる(0045)。②「The team must only sign software artifacts built from their own source code.」署名できるのは、自分のソースから作った物だけである。llama.cpp・SQLitePCLRaw は、自分のソースではないので署名できず、SAC には効かない。③「For executable programs that may be downloaded and executed based on our signature, we require a certain verifiable reputation.」(評判の基準の中身は、文書に無い)。証明書の名義は SignPath Foundation で、利用者に見える発行元もその名前になる。条件を満たしても、最初の起動の警告は、当面消えない見込みである(証明書はプロジェクトごとに別の 1 枚で、新しいプロジェクトには、評判のない証明書が来る。根拠の「SignPath の証明書」)。変わるのは、警告に出る発行元が「不明」から「SignPath Foundation」になることと、評判が版をまたいで(その証明書の間は)たまることである |
-| Microsoft Store(MSIX) | 警告を、初日から消せる唯一の道ではある(根拠の smartscreen-reputation の表の「Microsoft Store: No warning」)。ただし、個人の開発者アカウントは、身分証と自撮りで本人を確かめ、「publish apps under your own name」の人向けである。方針 10.14 は、発行元の名前が事業体に見えるなら会社のアカウントを求める。MSIX は、AppData に新しく作るファイルを、パッケージ専用の場所に移し、アンインストールで消す(データの置き場と、モデルを手で置く案内が変わる)。提出と審査の手間も増える。0042 の配布の形(zip)を、作り替える大きさの変更になる |
+| Microsoft Store(MSIX) | 警告を、初日から消せる唯一の道ではある(根拠の smartscreen-reputation の表の「Microsoft Store: No warning」)。ただし、MSIX は、AppData に新しく作るファイルを、パッケージ専用の場所に移し、アンインストールで消す(データの置き場と、モデルを手で置く案内が変わる)。提出と審査の手間も増える。0042 の配布の形(zip)を、作り替える大きさの変更になる |
 | Azure Artifact Signing(旧 Trusted Signing) | 日本の個人は使えない(個人は米国とカナダだけ)。日本の組織は使えるが、組織の検証が要る。今は、検証に出せる組織・事業の登録が無い。同梱物も含めて、全部を署名でき、SAC にも効く見込みなので、登録ができたら取れる案である。月 $9.99 から |
-| 個人の証明書(オープンソース向けの個人の証明書など) | 証明書の発行先は個人で、その名前が発行元に出る。配布の名義は Organization の名前で出す方針に合わない。個々の販売元の条件は、調べていない |
-| OV・EV の証明書を買って署名する | 署名しても、評判がたまるまで警告は出る(「EV certificates no longer bypass SmartScreen」。評判は「several weeks and hundreds of clean installs」)。証明書の費用と、鍵を守る手間が、続く |
+| OV・EV の証明書(オープンソース向けの個人の証明書を含む)を買って署名する | 署名しても、評判がたまるまで警告は出る(「EV certificates no longer bypass SmartScreen」。評判は「several weeks and hundreds of clean installs」)。証明書の費用と、鍵を守る手間が、続く。個人の証明書の、個々の販売元の条件は、調べていない |
 | NVIDIA の DLL を zip から外し、SignPath の条件に合わせる | 配り方(0042)と、利用者への約束の文(0043)が、大きく変わる。それでも、llama.cpp などは署名できない |
 
 ## 根拠
@@ -64,8 +63,8 @@ NVIDIA(CUDA・cuDNN)と Microsoft(VC++ ランタイム・.NET)の DLL には、�
   - 測っていないこと: Sandbox では Microsoft Defender が動いておらず、クラウドの評判に問い合わせが届いたかは分からない。ただ、配る版ごとにハッシュが新しく、評判は無い。`Ohanami.App.exe` が先に止まるので、アプリの子プロセスとしての `llama-server.exe` の起動は、試せていない。
 - **SignPath の証明書**: SignPath で署名している公開プロジェクト 3 つ(Rainmeter・Ditto・fastfetch)の配布物の署名を読んだ。名義は 3 つとも「CN=SignPath Foundation」(GlobalSign 発行、OV)で、証明書の拇印は 3 つとも別だった。有効期間は約 1 年強。規約の「the certificate provided to this project」とも合う。評判は、「individual file hashes and/or the certificates used to sign those files」にたまる(Microsoft の SmartScreen の担当者の個人ブログ。公式文書ではない。https://textslashplain.com/2024/11/15/best-practices-for-smartscreen-apprep/)ので、新しい証明書は評判を作り直す。
 - **署名できる範囲**: SignPath の規約(https://signpath.org/terms)の、上の引用。Azure Artifact Signing の quickstart(https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart)は、Public Trust の証明書を、日本を含む国の「organizations」に出し、「Individual developers must be located in the United States or Canada」と書く。
-- **Microsoft Store**: 開発者アカウントの文書(https://learn.microsoft.com/en-us/windows/apps/publish/partner-center/open-a-developer-account)に、身分証と自撮りでの確認、「Choose an Individual account if you want to publish apps under your own name」とある。Store の方針 10.14(https://learn.microsoft.com/en-us/windows/apps/publish/store-policies)に、「A company account is required if ... a reasonable consumer would interpret your application or publisher name to be that of a business entity」とある。MSIX の文書(https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)に、AppData に新しく作るファイルは、「a private per-user, per-package location」に置かれ、パッケージの外から見える位置に重ねて見せる、アンインストールで、そのファイルも消える、とある。
-- 確かめていないこと: 発行元の表示名を、本名以外(Organization の名前など)にできるか。Azure Artifact Signing が、どんな組織(法人格の要否)を受けるか。SignPath が、NVIDIA の DLL を同梱した配布を、実際に断るか(規約の文言から、当たると読んだだけ)。
+- **Microsoft Store**: MSIX の文書(https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)に、AppData に新しく作るファイルは、「a private per-user, per-package location」に置かれ、パッケージの外から見える位置に重ねて見せる、アンインストールで、そのファイルも消える、とある。
+- 確かめていないこと: Azure Artifact Signing が、どんな組織(法人格の要否)を受けるか。SignPath が、NVIDIA の DLL を同梱した配布を、実際に断るか(規約の文言から、当たると読んだだけ)。
 
 ## 結果
 
