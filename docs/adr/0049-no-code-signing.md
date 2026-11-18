@@ -7,7 +7,7 @@
 使う人から見た問題は、たとえば次のとおり。
 
 - GitHub の Release から zip を取って展開し、`Ohanami.App.exe` を開くと、青い「Windows によって PC が保護されました」が出る。「詳細情報」を押すと「実行」が出るので、押せば起動する。署名のない実行ファイルを、ブラウザーで取って開いたときの、Windows の SmartScreen の警告である。
-- Windows 11 の「スマート アプリ コントロール」(Smart App Control。以下 SAC)が「オン」の PC では、警告ではなく、起動そのものが止まる見込みである。「実行」を押す道が無い。
+- Windows 11 の「スマート アプリ コントロール」(Smart App Control。以下 SAC)が「オン」の PC では、警告ではなく、起動そのものが止まる(根拠の「SAC で測ったこと」)。「実行」を押す道が無い。
 
 電子署名(Authenticode。実行ファイル・DLL に、発行者の証明書で署名をつけること)があれば、この 2 つは軽くなる。この決定は、署名をつけないことを選び、その理由と代償を書く。
 
@@ -25,7 +25,7 @@ NVIDIA(CUDA・cuDNN)と Microsoft(VC++ ランタイム・.NET)の DLL には、�
 
 ## 決定
 
-**配布の zip には、電子署名をつけない。SmartScreen の警告と、SAC で使えない見込みは、README の「起動で警告が出たとき」に書いて、利用者に伝える。**
+**配布の zip には、電子署名をつけない。SmartScreen の警告と、SAC で使えないことは、README の「起動で警告が出たとき」に書いて、利用者に伝える。**
 
 - README が伝えること: 警告が出たときは「詳細情報」→「実行」。SAC が「オン」のときは、この PC では使えない(個別のアプリだけを許す方法は無い)。確かめ方と、「オフ」にしたときの扱い。
 - Release の文(`tools/release/notes/<版>.md`)にも、同じ要点を短く書く。
@@ -56,16 +56,21 @@ NVIDIA(CUDA・cuDNN)と Microsoft(VC++ ランタイム・.NET)の DLL には、�
 - **SAC**:
   - 上の smartscreen-reputation: 「Smart App Control will block execution of unsigned files unless the file has a positive reputation. Smart App Control signature checks apply to all executable files, not just those downloaded from the Internet.」
   - Microsoft の人の個人ブログ(公式文書ではない。https://textslashplain.com/2026/04/28/smart-app-control/): SAC は、OS のローダーが読む、すべてのコード(DLL・スクリプトを含む)の署名を見る。署名の無いコードは、クラウドの評判(Intelligent Security Graph)に問い合わせる。
-  - したがって、署名した `Ohanami.App.exe` が、署名のない DLL を読む、または署名のない `llama-server.exe` を起動する場合の、SAC の扱いは、署名の範囲に依存する。**署名のない子プロセスの exe の扱いを、明記した Microsoft の文書は、見つけていない。**
+  - したがって、署名した `Ohanami.App.exe` が、署名のない DLL を読む、または署名のない `llama-server.exe` を起動する場合の、SAC の扱いは、署名の範囲に依存する。署名のない子プロセスの exe の扱いを、明記した Microsoft の文書は、見つけていない。
+- **SAC で測ったこと**: Windows Sandbox(Windows 11 Enterprise 26100、GPU なし)で、SAC を「オン」にして、配布の zip(Releases から取った物)を確かめた。
+  - 「オン」にする方法: `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy` の `VerifiedAndReputablePolicyState` を 1 にし、`CiTool --refresh` で、SAC のポリシー(VerifiedAndReputableDesktop)を有効にした。効いていることは、新しく作った署名のない小さな exe が止まることで確かめた。
+  - `Ohanami.App.exe` の起動と、`llama-server.exe --version` の直接の実行は、どちらも止まった(「An Application Control policy has blocked this file」)。Mark of the Web の有無で、結果は変わらない。
+  - zip の中の 448 個の実行ファイル(.exe・.dll)を 1 つずつ読み込むと、署名の有効な 418 個は読めた。署名のない 30 個は、すべて止まった: Ohanami 自身 3、llama.cpp 23、SQLitePCLRaw 4。CodeIntegrity のイベントログ(SAC のブロックの記録)の一覧も、この 30 個と一致した。
+  - 測っていないこと: Sandbox では Microsoft Defender が動いておらず、クラウドの評判に問い合わせが届いたかは分からない。ただ、配る版ごとにハッシュが新しく、評判は無い。`Ohanami.App.exe` が先に止まるので、アプリの子プロセスとしての `llama-server.exe` の起動は、試せていない。
 - **SignPath の証明書**: SignPath で署名している公開プロジェクト 3 つ(Rainmeter・Ditto・fastfetch)の配布物の署名を読んだ。名義は 3 つとも「CN=SignPath Foundation」(GlobalSign 発行、OV)で、証明書の拇印は 3 つとも別だった。有効期間は約 1 年強。規約の「the certificate provided to this project」とも合う。評判は、「individual file hashes and/or the certificates used to sign those files」にたまる(Microsoft の SmartScreen の担当者の個人ブログ。公式文書ではない。https://textslashplain.com/2024/11/15/best-practices-for-smartscreen-apprep/)ので、新しい証明書は評判を作り直す。
 - **署名できる範囲**: SignPath の規約(https://signpath.org/terms)の、上の引用。Azure Artifact Signing の quickstart(https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart)は、Public Trust の証明書を、日本を含む国の「organizations」に出し、「Individual developers must be located in the United States or Canada」と書く。
 - **Microsoft Store**: 開発者アカウントの文書(https://learn.microsoft.com/en-us/windows/apps/publish/partner-center/open-a-developer-account)に、身分証と自撮りでの確認、「Choose an Individual account if you want to publish apps under your own name」とある。Store の方針 10.14(https://learn.microsoft.com/en-us/windows/apps/publish/store-policies)に、「A company account is required if ... a reasonable consumer would interpret your application or publisher name to be that of a business entity」とある。MSIX の文書(https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)に、AppData に新しく作るファイルは、「a private per-user, per-package location」に置かれ、パッケージの外から見える位置に重ねて見せる、アンインストールで、そのファイルも消える、とある。
-- 確かめていないこと: 発行元の表示名を、本名以外(Organization の名前など)にできるか。Azure Artifact Signing が、どんな組織(法人格の要否)を受けるか。SignPath が、NVIDIA の DLL を同梱した配布を、実際に断るか(規約の文言から、当たると読んだだけ)。署名のない子プロセスの exe の SAC の扱い(上)。
+- 確かめていないこと: 発行元の表示名を、本名以外(Organization の名前など)にできるか。Azure Artifact Signing が、どんな組織(法人格の要否)を受けるか。SignPath が、NVIDIA の DLL を同梱した配布を、実際に断るか(規約の文言から、当たると読んだだけ)。
 
 ## 結果
 
 - 版ごとに、SmartScreen の警告が出る。署名がないので、評判は、版ごとに 0 から始まる。
-- SAC が「オン」の PC では、使えない見込み。SAC が「オン」の PC では測っていない(Microsoft の文書と、上の根拠からの見込みである)。利用者が SAC を「オフ」にするかは、本人が決める。README に、その旨を書く。
+- SAC が「オン」の PC では、使えない(Ohanami 自身が止まる。仮に Ohanami 自身に署名しても、llama.cpp と SQLitePCLRaw の部品が止まる)。利用者が SAC を「オフ」にするかは、本人が決める。README に、その旨を書く。
 - 署名の鍵・承認の仕組みが要らないので、Release は `GITHUB_TOKEN` だけで作れる(0048)。ワークフローに、署名の秘密を渡さない。
 - zip を受け取った人が、中身を確かめる手段は、署名ではなく、Release の文の SHA-256(0048)である。
 
