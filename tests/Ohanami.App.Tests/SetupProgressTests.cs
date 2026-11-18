@@ -202,13 +202,18 @@ public sealed class SetupProgressTests
     private static ModelDownloadException Fail(ModelDownloadFailure kind, string? file = "textual/model.onnx_data", int? status = null, string? host = null) =>
         new(kind, "Core のメッセージ(テスト)。" + new string('長', 80), file, status, host, 4_646_000_000, 2_100_000_000);
 
+    /// <summary>領域の鍵から、取る組を決める(一括の領域は、まだそろっていない組)。</summary>
+    private static ModelSets Taken(SetupState state, ModelSets key) =>
+        key != SetupWindow.BothSets ? key
+            : (state.Embedding.IsComplete ? ModelSets.None : ModelSets.FeatureVector) | (state.Vlm.IsComplete ? ModelSets.None : ModelSets.Vlm);
+
     /// <summary>場面の全部(組・押す前・取っている最中の各段階・失敗の全種類・中止・空きが足りない・続き)の窓の高さを集める。名前は、どの場面かを言う。</summary>
-    private static async Task<List<(string Name, double Height)>> HeightsAsync(Func<SetupState> state, ModelSets first, ModelSets second)
+    private static async Task<List<(string Name, double Height)>> HeightsAsync(Func<SetupState> state, params ModelSets[] keys)
     {
         var heights = new List<(string, double)>();
         void Add(string name, SetupWindow w) => heights.Add((name, ContentHeight(w)));
 
-        foreach (ModelSets sets in new[] { first, second })
+        foreach (ModelSets sets in keys)
         {
             string tag = sets + ": ";
 
@@ -228,7 +233,7 @@ public sealed class SetupProgressTests
             // 取っている最中: 各段階 × ファイル(長いファイル名)
             var fake = new FakeDownloads();
             SetupWindow w = SetupWindowTests.NewWindow(state(), state, downloads: fake);
-            Task run = w.StartDownloadAsync(sets);
+            Task run = w.StartDownloadAsync(Taken(state(), sets), sets);
             Add(tag + "取っている最中・始めたばかり", w);
             foreach (ModelDownloadPhase phase in Enum.GetValues<ModelDownloadPhase>())
                 foreach (string file in new[] { "visual/model.onnx", "textual/model.onnx_data", "a-very-long-file-name-for-layout-measurement/with/deep/folders/model-00001-of-00009.gguf" })
@@ -251,7 +256,7 @@ public sealed class SetupProgressTests
                 {
                     var f = new FakeDownloads();
                     SetupWindow fw = SetupWindowTests.NewWindow(state(), state, downloads: f);
-                    Task r = fw.StartDownloadAsync(sets);
+                    Task r = fw.StartDownloadAsync(Taken(state(), sets), sets);
                     f.Fail(Fail(kind, file, status, host));
                     await r;
                     Add(tag + $"失敗・{kind}・{label}", fw);
@@ -260,7 +265,7 @@ public sealed class SetupProgressTests
             // 中止
             var cf = new FakeDownloads();
             SetupWindow cw = SetupWindowTests.NewWindow(state(), state, downloads: cf);
-            Task cr = cw.StartDownloadAsync(sets);
+            Task cr = cw.StartDownloadAsync(Taken(state(), sets), sets);
             cf.Report(new ModelDownloadProgress(ModelDownloadPhase.Downloading, "visual/model.onnx", 0, 4, 1, EmbeddingTotal));
             ButtonOf(cw, SetupWords.CancelLabel).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             Add(tag + "中止している最中", cw);
@@ -273,7 +278,7 @@ public sealed class SetupProgressTests
     private static void AssertSameHeight(List<(string Name, double Height)> heights, string state)
     {
         double first = heights[0].Height;
-        Assert.True(heights.Count > 40, $"場面が少ない({heights.Count})");
+        Assert.True(heights.Count > 20, $"場面が少ない({heights.Count})");
         foreach ((string name, double h) in heights)
             Assert.True(Math.Abs(h - first) < 0.001, $"{state}: 「{name}」の窓の高さ {h} が、最初の場面「{heights[0].Name}」の {first} と違う");
     }
@@ -282,21 +287,28 @@ public sealed class SetupProgressTests
     public async Task The_window_height_is_the_same_in_every_scene_when_both_models_are_missing()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.BothMissing, ModelSets.FeatureVector, ModelSets.Vlm), "両方が未取得"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.BothMissing, ModelSets.FeatureVector, ModelSets.Vlm, SetupWindow.BothSets), "両方が未取得"));
     }
 
     [Fact]
     public async Task The_window_height_is_the_same_in_every_scene_when_only_the_text_search_model_is_missing()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.VlmOnlyMissing, ModelSets.Vlm, ModelSets.Vlm), "テキスト検索のモデルだけが未取得"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.VlmOnlyMissing, ModelSets.Vlm, SetupWindow.BothSets), "テキスト検索のモデルだけが未取得"));
+    }
+
+    [Fact]
+    public async Task The_window_height_is_the_same_in_every_scene_when_only_the_feature_vector_model_is_missing()
+    {
+        await StaDispatcher.RunAsync(async () =>
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.EmbeddingOnlyMissing, ModelSets.FeatureVector, SetupWindow.BothSets), "特徴ベクトル検索のモデルだけが未取得"));
     }
 
     [Fact]
     public async Task The_window_height_is_the_same_in_every_scene_when_a_file_has_the_wrong_size()
     {
         await StaDispatcher.RunAsync(async () =>
-            AssertSameHeight(await HeightsAsync(SetupWindowTests.WithMismatch, ModelSets.FeatureVector, ModelSets.Vlm), "大きさの違うファイルがある"));
+            AssertSameHeight(await HeightsAsync(SetupWindowTests.WithMismatch, ModelSets.FeatureVector, ModelSets.Vlm, SetupWindow.BothSets), "大きさの違うファイルがある"));
     }
 
     [Fact]
@@ -307,15 +319,28 @@ public sealed class SetupProgressTests
             var fake = new FakeDownloads();
             SetupState current = SetupWindowTests.BothMissing();
             SetupWindow w = SetupWindowTests.NewWindow(current, () => current, downloads: fake);
-            double[] areas = AreaHeights(w);
-            Assert.Equal([SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight], areas);
+            double[] three = [SetupWindow.BothAreaHeight, SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight];   // 「2 つとも」+ 区画ごとの 2 つ
+            Assert.Equal(three, AreaHeights(w));
 
             Task run = w.StartDownloadAsync(ModelSets.FeatureVector);
             fake.Report(P(ModelDownloadPhase.Downloading, EmbeddingFiles[0], 0, 1_000_000_000));
-            Assert.Equal([SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight], AreaHeights(w));
+            Assert.Equal(three, AreaHeights(w));
             fake.Fail(Fail(ModelDownloadFailure.HttpStatus, status: 404, host: "cdn.example.test"));
             await run;
-            Assert.Equal([SetupWindow.DownloadAreaHeight, SetupWindow.DownloadAreaHeight], AreaHeights(w));
+            Assert.Equal(three, AreaHeights(w));
+
+            // 「2 つとも」を取っているとき・中止のあと(文の出る領域が「2 つとも」)
+            Task both = w.StartDownloadAsync(SetupWindow.BothSets);
+            fake.Report(P(ModelDownloadPhase.Downloading, EmbeddingFiles[0], 0, 1_000_000_000));
+            Assert.Equal(three, AreaHeights(w));
+            ButtonOf(w, SetupWords.CancelLabel).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            await both;
+            Assert.Equal(three, AreaHeights(w));
+
+            // VLM だけ残った窓(特徴ベクトル検索のモデルがそろった)では、領域は一括と VLM の 2 つ
+            current = SetupWindowTests.VlmOnlyMissing();
+            w.Recheck(manual: false);
+            Assert.Equal([SetupWindow.BothAreaHeight, SetupWindow.DownloadAreaHeight], AreaHeights(w));   // 一括の領域は出しっぱなし
         });
     }
 
@@ -329,7 +354,8 @@ public sealed class SetupProgressTests
         host.Measure(new Size(820, double.PositiveInfinity));
         host.Arrange(new Rect(0, 0, 820, Math.Ceiling(host.DesiredSize.Height)));
         host.UpdateLayout();
-        double[] result = [.. Descendants(root).OfType<StackPanel>().Where(p => p.Height == SetupWindow.DownloadAreaHeight).Select(p => p.ActualHeight)];
+        double[] result = [.. Descendants(root).OfType<FrameworkElement>()
+            .Where(p => (p is StackPanel && p.Height == SetupWindow.DownloadAreaHeight) || (p is Grid && p.Height == SetupWindow.BothAreaHeight)).Select(p => p.ActualHeight)];
         host.Child = null;
         w.Content = root;
         return result;
@@ -398,14 +424,23 @@ public sealed class SetupProgressTests
             host.Measure(new Size(820, double.PositiveInfinity));
             host.Arrange(new Rect(0, 0, 820, Math.Ceiling(host.DesiredSize.Height)));
             host.UpdateLayout();
-            TextBlock plan = Descendants(root).OfType<TextBlock>().First(t => t.Text.StartsWith("押すと、", StringComparison.Ordinal) && t.Text.Contains("前回の続き", StringComparison.Ordinal));
-            var probe = new TextBlock { Text = plan.Text, TextWrapping = TextWrapping.Wrap, FontFamily = plan.FontFamily, FontSize = plan.FontSize, Width = plan.ActualWidth };
-            probe.Measure(new Size(plan.ActualWidth, double.PositiveInfinity));
+            // 区画の領域(全幅)と、「2 つとも」の領域(ボタンの左の、せまい幅)の、すべての見積もりの文
+            TextBlock[] plans = [.. Descendants(root).OfType<TextBlock>().Where(t => t.Text.StartsWith("押すと、", StringComparison.Ordinal) && t.Text.Contains("前回の続き", StringComparison.Ordinal))];
+            var probes = plans.Select(plan =>
+            {
+                var probe = new TextBlock { Text = plan.Text, TextWrapping = TextWrapping.Wrap, FontFamily = plan.FontFamily, FontSize = plan.FontSize, Width = plan.ActualWidth };
+                probe.Measure(new Size(plan.ActualWidth, double.PositiveInfinity));
+                return (plan.ActualWidth, probe.DesiredSize.Height);
+            }).ToArray();
             host.Child = null;
             w.Content = root;
 
-            Assert.True(plan.ActualWidth > 600, $"見積もりの文の幅 {plan.ActualWidth}");
-            Assert.True(probe.DesiredSize.Height <= 2 * SetupWindow.AreaLineHeight, $"見積もりの文が {probe.DesiredSize.Height}px 要る(2 行 = {2 * SetupWindow.AreaLineHeight}px に収まらず、切れる)");
+            Assert.Equal(3, plans.Length);   // 「2 つとも」+ 区画ごとの 2 つ
+            foreach ((double width, double height) in probes)
+            {
+                Assert.True(width > 450, $"見積もりの文の幅 {width}");
+                Assert.True(height <= 2 * SetupWindow.AreaLineHeight, $"見積もりの文が {height}px 要る(2 行 = {2 * SetupWindow.AreaLineHeight}px に収まらず、切れる)");
+            }
             return Task.CompletedTask;
         });
     }

@@ -137,16 +137,61 @@ internal static class SetupWords
         return $"{label} ({FormatSize(plan.RemainingBytes)})";
     }
 
+    /// <summary>
+    /// 「2 つともダウンロード」のボタンの文字(特徴ベクトル検索のモデルと、テキスト検索のモデルを、続けて取る)。続き・残りの言い方は <see cref="DownloadButton"/> と同じ。
+    /// </summary>
+    public static string DownloadBothButton(ModelDownloadPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        string label = plan.Files.Any(f => f.PartialBytes > 0) ? "2 つとも続きからダウンロード" : "2 つともダウンロード";
+        return $"{label} ({FormatSize(plan.RemainingBytes)})";
+    }
+
+    /// <summary>
+    /// 一括の領域のボタンの文字。片方がそろっていて、残りの組だけを取るとき(「2 つとも」とは言えない)。続き・残りの言い方は <see cref="DownloadButton"/> と同じ。
+    /// </summary>
+    public static string DownloadRemainingButton(ModelDownloadPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        string label = plan.Files.Any(f => f.PartialBytes > 0) ? "残りを続きからダウンロード" : "残りをダウンロード";
+        return $"{label} ({FormatSize(plan.RemainingBytes)})";
+    }
+
+    /// <summary>一括の領域の文の頭。片方がそろっていることを言う(<paramref name="readyJob"/> は、そろっているほうのモデル)。</summary>
+    public static string BulkReadyNote(JobKind readyJob) => $"{ProcessingWords.StageName(readyJob)}のモデルは、そろっています。";
+
+    /// <summary>「2 つともダウンロード」の領域に添える 1 行(取る順)。</summary>
+    public static string BothOrder => $"{ProcessingWords.StageName(JobKind.Embed)}のモデルから先に取ります";
+
     public const string DownloadButtonHint = "取得元から、足りないファイルを取って、置き場に置きます。取ったあとに、中身を確かめます";
 
     /// <summary>押す前に分かること(何を・どこから・どこへ・空き)。</summary>
-    public static string PlanLine(ModelDownloadPlan plan, long? freeBytes, string root)
+    public static string PlanLine(ModelDownloadPlan plan, long? freeBytes, string root) => PlanLine(plan, [(root, freeBytes)]);
+
+    /// <summary>
+    /// 一括の領域で、片方がそろっていて残りだけを取るときの、押す前に分かること(<see cref="BulkReadyNote"/> + 見積もりの文。ファイル数を「残りの N ファイル」と言う)。
+    /// </summary>
+    public static string RemainingPlanLine(JobKind readyJob, ModelDownloadPlan plan, IReadOnlyList<(string Root, long? Free)> drives) =>
+        BulkReadyNote(readyJob) + PlanLine(plan, drives, remainder: true);
+
+    /// <summary>
+    /// 押す前に分かること。<paramref name="drives"/> は、置き場のドライブと、その空き(分からなければ null)。置き場が 1 つのドライブなら「置き場のドライブ (C:\) の空きは …」、
+    /// 2 つのドライブにまたがるとき(2 つのモデルの置き場が別のドライブ)は、ドライブごとに空きを言う。
+    /// </summary>
+    public static string PlanLine(ModelDownloadPlan plan, IReadOnlyList<(string Root, long? Free)> drives, bool remainder = false)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        string head = string.Create(CultureInfo.InvariantCulture, $"押すと、Hugging Face から {plan.Files.Count} ファイル (合計 {FormatSize(plan.TotalBytes)}) を取って、置き場に置きます");
+        ArgumentNullException.ThrowIfNull(drives);
+        string head = string.Create(CultureInfo.InvariantCulture, $"押すと、Hugging Face から{(remainder ? "残りの " : " ")}{plan.Files.Count} ファイル (合計 {FormatSize(plan.TotalBytes)}) を取って、置き場に置きます");
         long partial = plan.TotalBytes - plan.RemainingBytes;
         string resume = partial > 0 ? $"。前回の続きがあるので、取るのは残りの {FormatSize(plan.RemainingBytes)} です" : "";
-        string free = freeBytes is { } f ? $"。置き場のドライブ ({root}) の空きは {FormatSize(f)} です" : "";
+        (string Root, long? Free)[] known = [.. drives.Where(d => d.Free is not null)];
+        string free = known.Length switch
+        {
+            0 => "",
+            1 => $"。置き場のドライブ ({known[0].Root}) の空きは {FormatSize(known[0].Free!.Value)} です",
+            _ => "。置き場のドライブの空きは、" + string.Join("、", known.Select(d => $"{d.Root} が {FormatSize(d.Free!.Value)}")) + " です",
+        };
         return head + resume + free;
     }
 
@@ -154,11 +199,15 @@ internal static class SetupWords
     public static string NoSpaceReason(ModelDownloadPlan plan, long freeBytes, string root)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return $"空きが足りません: 要るのは {FormatSize(plan.RequiredFreeBytes)}、置き場のドライブ ({root}) の空きは {FormatSize(freeBytes)} です。空きを作ってから、「{RecheckLabel}」を押してください";
+        return NoSpaceReason(plan.RequiredFreeBytes, freeBytes, root);
     }
 
-    /// <summary>もう一方のモデルを取っている間、押せない理由。</summary>
-    public const string BusyReason = "もう一方のモデルを取っている間は、押せません";
+    /// <summary>空きが足りないドライブ 1 つについて、押せない理由(<paramref name="requiredBytes"/> は、そのドライブに置くぶんの残りと余裕)。</summary>
+    public static string NoSpaceReason(long requiredBytes, long freeBytes, string root) =>
+        $"空きが足りません: 要るのは {FormatSize(requiredBytes)}、置き場のドライブ ({root}) の空きは {FormatSize(freeBytes)} です。空きを作ってから、「{RecheckLabel}」を押してください";
+
+    /// <summary>取っている間、ほかのダウンロードのボタンが押せない理由(1 つの組を取っている間も、2 つともを取っている間も)。</summary>
+    public const string BusyReason = "ダウンロードしている間は、押せません";
 
     public const string Starting = "ダウンロードを始めています…";
     public const string CancelLabel = "中止";
@@ -199,7 +248,10 @@ internal static class SetupWords
     // ---- 失敗(平らな文。状態コード・接続先・ファイル名・空きを添える。手で置く方法へ案内する)
     public const string FailureHead = "ダウンロードできませんでした";
 
-    public const string ManualGuidance = "手で置くこともできます。上の置き場に、表と同じ名前・同じ大きさのファイルを置いて、「" + RecheckLabel + "」を押してください";
+    /// <summary>一括の領域の、失敗のあとの案内(置き場は、各区画に書いてある)。</summary>
+    public const string BulkManualGuidance = "手で置くときは、各区画の置き場に置いて「" + RecheckLabel + "」を押してください";
+
+    public const string ManualGuidance = "手で置くこともできます。置き場に、表と同じ名前・同じ大きさのファイルを置いて、「" + RecheckLabel + "」を押してください";
 
     public static string FailureSummary(ModelDownloadException e)
     {
