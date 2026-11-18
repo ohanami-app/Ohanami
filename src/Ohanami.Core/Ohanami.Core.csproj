@@ -14,6 +14,8 @@
     <InternalsVisibleTo Include="Ohanami.Bench" />
     <!-- ベンチのテスト(tests/Ohanami.Bench.Tests): vlm-check の比較が VlmResult など Core の内部の型を受け取る -->
     <InternalsVisibleTo Include="Ohanami.Bench.Tests" />
+    <!-- 濁点・半濁点の読み取りの尺(tools/Ohanami.KanaYardstick。手元専用): プロンプト・スキーマ・llama-server の引数を、製品と同じものにするために使う -->
+    <InternalsVisibleTo Include="Ohanami.KanaYardstick" />
   </ItemGroup>
 
   <ItemGroup>
