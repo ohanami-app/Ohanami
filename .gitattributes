@@ -1,3 +1,7 @@
+# 行末は、どの環境で取り出しても LF にそろえる(GitHub のランナーの git は、取り出しで CRLF に変える)。
+# 配布する zip の LICENSE などと、Ohanami の DLL が、手元とランナーで同じバイト列になるようにするため。
+* text=auto eol=lf
+
 # 変換したモデルの CONVERSION.json は、変換に使ったスクリプトと requirements.txt の SHA-256 を記録する。
 # どの環境で取り出しても同じバイト列(LF)になるよう、行末を固定する。
 tools/convert-siglip2/*.py text eol=lf
