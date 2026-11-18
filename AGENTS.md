@@ -30,9 +30,11 @@ tests/
   Ohanami.Core.Tests/       Core のテスト。正解データは TestData/
   Ohanami.App.Tests/        App のテスト。画面を出さずに測る。文言・色・窓の作り方の決まりを、ソースを読んで見張るテストを含む
   Ohanami.Bench.Tests/      tools/Ohanami.Bench のテスト
+  Ohanami.KanaYardstick.Tests/  tools/Ohanami.KanaYardstick のテスト
   Ohanami.FakeLlamaServer/  VLM の起動・停止のテストに使う、偽の llama-server
 tools/
   Ohanami.Bench/            検索の回帰ベンチと採点
+  Ohanami.KanaYardstick/    合成画像で、VLM の濁点・半濁点の読み取りを測る(手元専用。画像は乱数の種から作り直す)
   convert-siglip2/          SigLIP2 を元の重みから ONNX に変換する Python(リポジトリの外の venv で動かす)
   siglip2-reference/        テストの正解データを作る Python(同上)
   runtime/                  ビルドとテストに要る runtime/ のファイルと tokenizer.json を、一次の配布元から取って置く PowerShell(Get-Runtime.ps1)
@@ -88,6 +90,7 @@ dotnet build Ohanami.sln -warnaserror
 dotnet test --project tests/Ohanami.Core.Tests
 dotnet test --project tests/Ohanami.App.Tests
 dotnet test --project tests/Ohanami.Bench.Tests
+dotnet test --project tests/Ohanami.KanaYardstick.Tests
 ```
 
 `Ohanami.Core.Tests` には、モデルの実物(`Category=Model`)と GPU(`Category=Gpu`)を使うテストがある。通常の実行はこの 2 つを除く。
