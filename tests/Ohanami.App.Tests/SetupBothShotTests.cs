@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Ohanami.Core;
 using Xunit;
 
@@ -50,6 +52,28 @@ public sealed class SetupBothShotTests
         body.Children.Remove(promise);
         promise.Margin = new Thickness(0, 0, 0, 12);
         body.Children.Insert(2, promise);   // 見出し・導入の文の次
+    }
+
+    /// <summary>窓の高さを <paramref name="height"/> に決め、中身を <paramref name="offset"/> だけスクロールした絵(スクロールが出る高さの確認用)。</summary>
+    private static void SaveScrolled(SetupWindow w, string path, double height, double offset)
+    {
+        var scroll = (ScrollViewer)w.Content;
+        w.Content = null;
+        var host = new Border { Background = AppColors.WindowBackground, Child = scroll, Width = 820, Height = height };
+        TestLook.Setup(host);
+        host.Measure(new Size(820, height));
+        host.Arrange(new Rect(0, 0, 820, height));
+        host.UpdateLayout();
+        scroll.ScrollToVerticalOffset(offset);
+        host.UpdateLayout();
+        var bmp = new RenderTargetBitmap(820, (int)height, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(host);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(bmp));
+        using FileStream fs = File.Create(path);
+        enc.Save(fs);
+        host.Child = null;
+        w.Content = scroll;
     }
 
     [Fact]
@@ -148,10 +172,57 @@ public sealed class SetupBothShotTests
             Shot(wp, "6b-resume");
             wp.Close();
 
-            // 7: 片方だけそろった(「2 つとも」の領域は無い)
+            // 7: 片方だけそろった(一括の領域は出しっぱなしで、残りだけを取る)
             SetupWindow w7 = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: new FakeDownloads { Free = 312_400_000_000 });
-            Shot(w7, "7-one-done");
+            Shot(w7, "7-one-done-vlm-left");
             w7.Close();
+            SetupWindow w7b = SetupWindowTests.NewWindow(SetupWindowTests.EmbeddingOnlyMissing(), downloads: new FakeDownloads { Free = 312_400_000_000 });
+            Shot(w7b, "7b-one-done-embedding-left");
+            w7b.Close();
+            SetupWindow w7c = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: new FakeDownloads { Free = 312_400_000_000, Partial = 1_000_000_000 });
+            Shot(w7c, "7c-one-done-resume");
+            w7c.Close();
+            SetupWindow w7d = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: new FakeDownloads { Free = 3_000_000_000 });
+            Shot(w7d, "7d-one-done-no-space");
+            w7d.Close();
+
+            // 7e: 残りを一括の領域で取っている最中 / 中止のあと / 失敗のあと
+            var fe = new FakeDownloads { Free = 312_400_000_000 };
+            SetupWindow we = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: fe);
+            DateTime te = t0;
+            we.Now = () => te;
+            Task re = we.StartDownloadAsync(ModelSets.Vlm, Both);
+            fe.Report(new ModelDownloadProgress(ModelDownloadPhase.Downloading, vlm[0], 0, 2, 2_000_000_000, 6_190_000_000));
+            te = te.AddSeconds(2);
+            fe.Report(new ModelDownloadProgress(ModelDownloadPhase.Downloading, vlm[0], 0, 2, 2_100_000_000, 6_190_000_000));
+            Shot(we, "7e-remaining-progress");
+            SetupWindowTests.Click(SetupWindowTests.ButtonOf(we, SetupWords.CancelLabel));
+            await re;
+            Shot(we, "7f-remaining-after-cancel");
+            we.Close();
+            var fg = new FakeDownloads { Free = 312_400_000_000 };
+            SetupWindow wg = SetupWindowTests.NewWindow(SetupWindowTests.VlmOnlyMissing(), downloads: fg);
+            Task rg = wg.StartDownloadAsync(ModelSets.Vlm, Both);
+            fg.Fail(Fail(ModelDownloadFailure.HttpStatus, vlm[1]));
+            await rg;
+            Shot(wg, "7g-remaining-after-failure");
+            wg.Close();
+
+            // 9d: 特徴ベクトル検索のモデルを区画のボタンで取り終えた(その区画の領域が空になる。木の線が見出しの高さのままであること)
+            var fd = new FakeDownloads { Free = 312_400_000_000 };
+            SetupState currentD = SetupWindowTests.BothMissing();
+            SetupWindow wd9 = SetupWindowTests.NewWindow(currentD, () => currentD, downloads: fd);
+            Task rd9 = wd9.StartDownloadAsync(ModelSets.FeatureVector);
+            for (int i = 0; i < embedding.Length; i++) fd.Report(P(ModelDownloadPhase.Completed, embedding[i], i, 4_579_405_088, 4_579_405_088));
+            Shot(wd9, "9d-tree-after-section-done");
+            fd.Fail(Fail(ModelDownloadFailure.Network, embedding[0]));
+            await rd9;
+            wd9.Close();
+
+            // 9e: 画面の作業領域より低くて、中身をスクロールで見せる高さ(窓の高さ 600、上から 300 DIP スクロールした絵)
+            SetupWindow ws = SetupWindowTests.NewWindow(SetupWindowTests.BothMissing(), downloads: new FakeDownloads { Free = 312_400_000_000 });
+            SaveScrolled(ws, Path.Combine(dir, "9e-tree-scrolled" + suffix + ".png"), 600, 300);
+            ws.Close();
 
             // 8: 区画の「ダウンロード」を押している間の、「2 つとも」の領域
             var f8 = new FakeDownloads { Free = 312_400_000_000 };

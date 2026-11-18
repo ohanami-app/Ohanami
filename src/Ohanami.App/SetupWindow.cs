@@ -20,6 +20,7 @@ namespace Ohanami.App;
 /// <item><b>ダウンロード</b>: 押す前に、何を・どこから・どこへ・空きがどれだけかを、1 行で言う(<see cref="IModelDownloads.Plan"/>。ネットワークには出ない)。押したときだけ取る。
 ///   ダウンロードの領域は 3 つある: 区画ごとの領域(特徴ベクトル検索のモデル・テキスト検索のモデル)と、導入の文の下の一括の領域(「2 つともダウンロード」)。
 ///   一括の領域は、どちらかの区画がそろっていない間は、ずっと出ている(押すと、まだそろっていない組だけを取る。片方がそろっていれば「残りをダウンロード」)。
+///   一括の領域の下に、2 つの区画を字下げして並べ、左の細い線(<see cref="TreeRail"/>。木の形)でつなぐ。区画が一括の領域に含まれることを示す。
 ///   領域の鍵は、一括の領域が <see cref="BothSets"/>、区画の領域がその区画の組。押した領域を覚えて(<see cref="_activeArea"/>)、進み具合・「中止」・失敗・中止の文は、押した領域に出す。
 ///   一括の領域で残り 1 組を取るときも、区画の領域とぶつからない(区画の側は「ダウンロードしている間は、押せません」になり、進み具合は出ない)。
 ///   一括は、取る組を 1 回の呼び出しで渡す(Core が、特徴ベクトル検索のモデル → テキスト検索のモデルの順に取り、空きをドライブごとの合計で先に見て、
@@ -43,6 +44,7 @@ internal sealed class SetupWindow : Window
     private readonly IShellActions _shell;
     private readonly IModelDownloads _downloads;
     private readonly StackPanel _body = new();
+    private readonly Dictionary<ModelSets, FrameworkElement> _sectionHeaders = [];   // 区画の見出し(組ごと。木の線の高さを、見出しから決める)
     private readonly TextBlock _status = new() { Margin = new Thickness(0, 0, 12, 0), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = AppColors.Secondary };
     private SetupState _state;
 
@@ -363,10 +365,21 @@ internal sealed class SetupWindow : Window
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14),
         });
 
-        // 一括の領域は、どちらかの区画がそろっていない間は出しっぱなし(片方がそろっていれば、残りだけを取る)
-        if (Remaining(_state) != ModelSets.None) _body.Children.Add(BothSection());
-        _body.Children.Add(Section(JobKind.Embed, _state.Embedding, ModelSets.FeatureVector));
-        _body.Children.Add(Section(JobKind.Vlm, _state.Vlm, ModelSets.Vlm));
+        // 一括の領域は、どちらかの区画がそろっていない間は出しっぱなし(片方がそろっていれば、残りだけを取る)。
+        // 区画は、一括の領域に含まれると分かるように、字下げして、細い線(木の形)でつなぐ
+        _sectionHeaders.Clear();
+        Border embedding = Section(JobKind.Embed, _state.Embedding, ModelSets.FeatureVector);
+        Border vlm = Section(JobKind.Vlm, _state.Vlm, ModelSets.Vlm);
+        if (Remaining(_state) == ModelSets.None)
+        {
+            _body.Children.Add(embedding);
+            _body.Children.Add(vlm);
+        }
+        else
+        {
+            _body.Children.Add(BothSection());
+            _body.Children.Add(SectionsUnderBulk(embedding, vlm));
+        }
 
         // 約束の文(ダウンロードのボタンの近く。AGENTS.md と同じ文)
         _body.Children.Add(new TextBlock
@@ -437,7 +450,26 @@ internal sealed class SetupWindow : Window
         else cell.ClearValue(TextBlock.ForegroundProperty);
     }
 
-    private UIElement Section(JobKind job, ModelSetStatus set, ModelSets sets)
+    /// <summary>字下げした 2 つの区画と、その左の木の線(一括の領域の下の縁から、各区画の見出しの高さまで)。</summary>
+    private Grid SectionsUnderBulk(Border embedding, Border vlm)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TreeRail.Indent) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        embedding.Margin = new Thickness(0, 12, 0, 12);   // 一括の領域との間は、線でつなぐ
+        Grid.SetRow(embedding, 0); Grid.SetColumn(embedding, 1);
+        Grid.SetRow(vlm, 1); Grid.SetColumn(vlm, 1);
+        var rail = new TreeRail([(embedding, _sectionHeaders[ModelSets.FeatureVector]), (vlm, _sectionHeaders[ModelSets.Vlm])]);
+        Grid.SetRow(rail, 0); Grid.SetRowSpan(rail, 2); Grid.SetColumn(rail, 0);
+        grid.Children.Add(embedding);
+        grid.Children.Add(vlm);
+        grid.Children.Add(rail);   // 線は、区画の配置が済んでから描く(区画より後ろの子)
+        return grid;
+    }
+
+    private Border Section(JobKind job, ModelSetStatus set, ModelSets sets)
     {
         var panel = new StackPanel();
 
@@ -448,6 +480,7 @@ internal sealed class SetupWindow : Window
         header.Children.Add(state);
         header.Children.Add(new TextBlock { Text = SetupWords.SectionTitle(job), FontWeight = FontWeights.SemiBold, ToolTip = ProcessingWords.StageHint(job) });
         panel.Children.Add(header);
+        _sectionHeaders[sets] = header;
 
         panel.Children.Add(new TextBlock
         {
@@ -524,7 +557,7 @@ internal sealed class SetupWindow : Window
     /// </summary>
     private UIElement BothSection() => new Border
     {
-        Child = DownloadArea(BothSets), Padding = new Thickness(14, 8, 14, 8), Margin = new Thickness(0, 0, 0, 12),
+        Child = DownloadArea(BothSets), Padding = new Thickness(14, 8, 14, 8),   // 下の区画とは、木の線でつなぐ(余白は、区画の側にある)
         Background = AppColors.ListSurface, BorderBrush = AppColors.ListBorder, BorderThickness = new Thickness(1),
     };
 
