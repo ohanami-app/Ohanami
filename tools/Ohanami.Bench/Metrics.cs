@@ -158,6 +158,8 @@ internal static class Metrics
         // 経路ごとの、上位 10 件のハッシュと 1 位のスコア(クエリごとに 1 回)
         var top10 = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var top1 = new Dictionary<string, double?>(StringComparer.Ordinal);
+        var corrected = new Dictionary<string, bool?>(StringComparer.Ordinal) { [Fused] = null };
+        foreach (PathOutcome outcome in response.Paths) corrected[outcome.PathId] = outcome.ScoreCorrected;
         foreach (string path in paths)
         {
             top10[path] = TopOf(response, path).Select(r => r.Hash).ToHashSet(StringComparer.Ordinal);
@@ -180,7 +182,7 @@ internal static class Metrics
                     PathHit? h = hit.Hits.FirstOrDefault(x => string.Equals(x.PathId, path, StringComparison.Ordinal));
                     score = h?.Score; rank = h?.Rank;
                 }
-                rows.Add(new ScoreRow(query, file, targets, judged, path, score, rank, top10[path].Contains(hit.Hash), top1[path]));
+                rows.Add(new ScoreRow(query, file, targets, judged, path, score, rank, top10[path].Contains(hit.Hash), top1[path], corrected[path]));
             }
         }
         return rows;

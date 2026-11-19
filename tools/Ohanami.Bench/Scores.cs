@@ -17,8 +17,10 @@ namespace Ohanami.Bench;
 /// <paramref name="Judged"/> は qrels の判定(当たり = true。qrels に無ければ null)。
 /// <paramref name="Top10"/> はその経路の上位 10 件に入っていたか(precision@10 と同じ取り方: <see cref="Metrics.TopOf"/>)。
 /// <paramref name="PathTop1"/> はそのクエリでのその経路の 1 位のスコア(経路が何も返さなければ null)。1 位との差を、この行だけから出せるように持つ。
+/// <paramref name="ScoreCorrected"/> は、製品の検索の結果の旗(<see cref="PathOutcome.ScoreCorrected"/>): その経路の点が補正後の点か(融合後の行は null)。
+/// 旗の列が無い古い形式の run を読んだときも null(補正の有無は分からない)。
 /// </summary>
-internal sealed record ScoreRow(string Query, string Filename, string Targets, bool? Judged, string Path, double? Score, double? Rank, bool Top10, double? PathTop1);
+internal sealed record ScoreRow(string Query, string Filename, string Targets, bool? Judged, string Path, double? Score, double? Rank, bool Top10, double? PathTop1, bool? ScoreCorrected = null);
 
 /// <summary>段階の名前と、かかった秒数(run の所要時間の記録)。</summary>
 internal sealed record StageTime(string Name, double Seconds);
@@ -138,8 +140,8 @@ internal static class ScoreReport
 
     /// <summary>
     /// run の summary に付ける、スコアの要約(経路ごと。見た目の経路は点のヒストグラムつき)。行が無ければ空の文字列。
-    /// 見た目の経路の点は、順位を決めた点(ADR 0051)。補正をかけた検索語(<see cref="HubnessGate.InScope"/>。製品と同じ関門)では cosine − μ·r、かけない検索語では cosine で、
-    /// 水準が違うので、2 つの群に分けて出す。
+    /// 見た目の経路の点は、順位を決めた点(ADR 0051)。補正をかけた検索では cosine − μ·r、かけない検索では cosine で、
+    /// 水準が違うので、製品の検索の結果の旗(<see cref="ScoreRow.ScoreCorrected"/>)で群に分けて出す(関門をここで計算し直さない)。旗の無い古い形式の run は、3 つ目の群にする。
     /// </summary>
     public static string Render(IReadOnlyList<ScoreRow> rows)
     {
@@ -152,14 +154,17 @@ internal static class ScoreReport
         if (Of(rows, VisualPath).Any())
         {
             sb.AppendLine("  見た目の経路の点(全画像に値がある。順位を決めた点。補正をかけた検索語とかけない検索語で水準が違うので、2 つの群に分け、同じ群の中でだけ並べる)");
-            foreach (bool corrected in new[] { true, false })
+            foreach (bool? corrected in new bool?[] { true, false, null })
             {
-                List<ScoreRow> group = [.. rows.Where(r => r.Path != VisualPath || HubnessGate.InScope(r.Query) == corrected)];
+                List<ScoreRow> group = [.. rows.Where(r => r.Path != VisualPath || r.ScoreCorrected == corrected)];
                 if (!Of(group, VisualPath).Any()) continue;
                 int queries = Of(group, VisualPath).Select(r => r.Query).Distinct(StringComparer.Ordinal).Count();
-                sb.AppendLine(corrected
-                    ? $"  [補正をかけた検索語: 日本語の文字を含む {HubnessGate.MaxCodePoints} 文字以下。点 = cosine − μ·r。{queries} クエリ]"
-                    : $"  [補正をかけない検索語: 点 = cosine。{queries} クエリ]");
+                sb.AppendLine(corrected switch
+                {
+                    true => $"  [補正をかけた検索語(結果の旗が補正あり): 点 = cosine − μ·r。{queries} クエリ]",
+                    false => $"  [補正をかけない検索語(結果の旗が補正なし): 点 = cosine。{queries} クエリ]",
+                    null => $"  [補正の有無が分からない検索語(旗の列が無い古い形式の run): 点の水準が混ざっている。{queries} クエリ]",
+                });
                 RenderVisualGroup(sb, group);
             }
         }

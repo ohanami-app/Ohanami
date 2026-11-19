@@ -12,7 +12,7 @@ namespace Ohanami.Bench.Tests;
 public sealed class ScoreRowTests
 {
     private static ScoreRow Row(string path, string file, double? score, double? rank, bool top10, double? top1, string targets = "", bool? judged = null, string query = "q") =>
-        new(query, file, targets, judged, path, score, rank, top10, top1);
+        new(query, file, targets, judged, path, score, rank, top10, top1, path == "fused" ? null : false);   // 旗は、経路の結果の旗(Fx.Response は補正なし)。融合後の行は null
 
     [Fact]
     public void Score_rows_carry_each_paths_score_rank_top10_and_the_query_top1()
@@ -148,12 +148,13 @@ public sealed class ScoreReportTests
     [Fact]
     public void The_visual_scores_are_split_into_queries_with_the_correction_and_queries_without_it()
     {
-        // 点の水準が違う(補正をかけた検索語は cosine − μ·r)ので、混ぜた 1 つの分布にしない。関門は製品と同じ(日本語の文字を含み 8 文字以下)
-        ScoreRow Vq(string q, double score) => new(q, "x.png", "visual", true, "visual", score, 1, true, score);
-        string text = ScoreReport.Render([Vq("夜の駅", 0.05), Vq("雨の窓辺", 0.07), Vq("night station", 0.20), Vq("これは九文字を超える長い日本語の文", 0.22)]);
+        // 点の水準が違う(補正をかけた検索は cosine − μ·r)ので、混ぜた 1 つの分布にしない。分けるのは、製品の検索の結果の旗。検索語から関門を計算し直さない
+        // (検索語は旗と食い違う文字列にしてある: 旗が「補正あり」の検索語が英字、「補正なし」の検索語が短い日本語)
+        ScoreRow Vq(string q, double score, bool corrected) => new(q, "x.png", "visual", true, "visual", score, 1, true, score, corrected);
+        string text = ScoreReport.Render([Vq("night", 0.05, true), Vq("rain window", 0.07, true), Vq("夜の駅", 0.20, false), Vq("雨の窓辺", 0.22, false)]);
 
-        int corrected = text.IndexOf("補正をかけた検索語:", StringComparison.Ordinal);
-        int plain = text.IndexOf("補正をかけない検索語:", StringComparison.Ordinal);
+        int corrected = text.IndexOf("補正をかけた検索語(結果の旗が補正あり)", StringComparison.Ordinal);
+        int plain = text.IndexOf("補正をかけない検索語(結果の旗が補正なし)", StringComparison.Ordinal);
         Assert.InRange(corrected, 0, plain - 1);
         string correctedPart = text[corrected..plain], plainPart = text[plain..];
         Assert.Contains("2 クエリ", correctedPart, StringComparison.Ordinal);
@@ -163,9 +164,26 @@ public sealed class ScoreReportTests
         Assert.DoesNotContain("同じ尺度", text, StringComparison.Ordinal);
 
         // 片方の群しか無ければ、その群だけを出す
-        string onlyPlain = ScoreReport.Render([Vq("night station", 0.20)]);
-        Assert.DoesNotContain("補正をかけた検索語:", onlyPlain, StringComparison.Ordinal);
-        Assert.Contains("補正をかけない検索語:", onlyPlain, StringComparison.Ordinal);
+        string onlyPlain = ScoreReport.Render([Vq("night station", 0.20, false)]);
+        Assert.DoesNotContain("[補正をかけた検索語", onlyPlain, StringComparison.Ordinal);
+        Assert.Contains("[補正をかけない検索語", onlyPlain, StringComparison.Ordinal);
+        Assert.DoesNotContain("[補正の有無が分からない", onlyPlain, StringComparison.Ordinal);
+
+        // 旗の無い古い形式の run は、3 つ目の群に分けて出す(補正の有無を推測しない)
+        string unknown = ScoreReport.Render([new ScoreRow("夜の駅", "x.png", "visual", true, "visual", 0.2, 1, true, 0.2)]);
+        Assert.Contains("[補正の有無が分からない検索語", unknown, StringComparison.Ordinal);
+        Assert.DoesNotContain("[補正をかけた検索語", unknown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Score_rows_take_the_corrected_flag_from_the_response_paths()
+    {
+        SearchResponse r = Fx.Response("q", ("a.png", 1, 2, 5), ("b.png", 2.5, 1, null));
+        SearchResponse flagged = r with { Paths = [.. r.Paths.Select(p => p.PathId == "visual" ? p with { ScoreCorrected = true } : p)] };
+        List<ScoreRow> rows = Metrics.ScoreRows("q", flagged, Metrics.IndexByFileName(flagged), ["a.png"], new Dictionary<string, string>(), Fx.Qrels("q\ta.png\t1\ts"));
+        Assert.True(rows.Single(x => x.Path == "visual").ScoreCorrected);
+        Assert.Null(rows.Single(x => x.Path == "fused").ScoreCorrected);
+        Assert.False(rows.Single(x => x.Path == "fulltext").ScoreCorrected);
     }
 
     [Fact]
@@ -289,10 +307,11 @@ public sealed class ScoresFileAndCompatibilityTests
 
     private static readonly IReadOnlyList<ScoreRow> SampleScores =
     [
-        new("猫", "a b.png", "visual|dialogue", true, "visual", 0.1234567890123, 12.5, true, 0.3),
+        new("猫", "a b.png", "visual|dialogue", true, "visual", 0.1234567890123, 12.5, true, 0.3, true),
         new("猫", "a b.png", "visual|dialogue", true, "fulltext", null, null, false, null),
         new("猫", "c.png", "", null, "fused", 0.0163, 3, false, 0.0328),
         new("犬", "d.png", "", false, "fulltext", -1.5, 7, false, 4.25),
+        new("犬", "d.png", "", false, "visual", 0.21, 8, false, 0.25, false),
     ];
 
     private static RunData Run(IReadOnlyList<ScoreRow>? scores) => new(
@@ -309,7 +328,38 @@ public sealed class ScoresFileAndCompatibilityTests
             RunFiles.Write(dir, Run(SampleScores), "s");
             RunData back = RunFiles.Read(dir);
             Assert.Equal(SampleScores, back.Scores);
-            Assert.Equal("query\tfilename\ttargets\tjudged\tpath\tscore\trank\ttop10\tpath_top1", File.ReadAllLines(Path.Combine(dir, RunFiles.ScoresFile))[0]);
+            Assert.Equal("query\tfilename\ttargets\tjudged\tpath\tscore\trank\ttop10\tpath_top1\tscore_corrected", File.ReadAllLines(Path.Combine(dir, RunFiles.ScoresFile))[0]);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void A_scores_file_without_the_flag_column_reads_with_the_flag_unknown()
+    {
+        string dir = TempDir();
+        try
+        {
+            RunFiles.Write(dir, Run(SampleScores), "s");
+            string path = Path.Combine(dir, RunFiles.ScoresFile);
+            // 旗の列を足す前の形式(9 列)に直す
+            string[] lines = File.ReadAllLines(path);
+            File.WriteAllLines(path, lines.Select(l => string.Join('\t', l.Split('\t').Take(9))));
+            RunData back = RunFiles.Read(dir);
+            Assert.Equal(SampleScores.Select(r => r with { ScoreCorrected = null }), back.Scores);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void A_scores_flag_that_is_not_1_0_or_empty_is_an_error()
+    {
+        string dir = TempDir();
+        try
+        {
+            RunFiles.Write(dir, Run(SampleScores), "s");
+            string path = Path.Combine(dir, RunFiles.ScoresFile);
+            File.WriteAllText(path, File.ReadAllText(path).Replace("\t0.3\t1\n", "\t0.3\t2\n"));
+            Assert.Throws<InvalidDataException>(() => RunFiles.Read(dir));
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }

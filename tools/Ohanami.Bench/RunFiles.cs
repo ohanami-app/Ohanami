@@ -19,7 +19,7 @@ internal sealed record RunData(IReadOnlyList<KnownItemRow> KnownItems, IReadOnly
 /// <list type="bullet">
 /// <item>known-items.tsv: set / query / filename / path / rank(経路の母集団に入っていなければ空)</item>
 /// <item>precision.tsv: query / path / relevant / judged_miss / unjudged / returned / top10(ファイル名を '|' でつなぐ)</item>
-/// <item>scores.tsv(無い run もある): query / filename / targets / judged / path / score / rank / top10 / path_top1(<see cref="ScoreRow"/>)</item>
+/// <item>scores.tsv(無い run もある): query / filename / targets / judged / path / score / rank / top10 / path_top1 / score_corrected(製品の検索の結果の旗。融合後の行は空。<see cref="ScoreRow"/>)</item>
 /// <item>top10.tsv(無い run もある): query / path / pos / filename / text(全文に一致 = 1) / judge(- = qrels のクエリでない、u = 未判定、0 = 外れ、1 = 当たり)(<see cref="TopRow"/>)</item>
 /// </list>
 /// known-items.tsv と precision.tsv の列は変えない(古い基準線と、今の run を比べられるように)。新しい情報は別のファイル(scores.tsv)に置き、
@@ -36,7 +36,10 @@ internal static class RunFiles
     private const string KnownHeader = "set\tquery\tfilename\tpath\trank";
     private const string PrecisionHeader = "query\tpath\trelevant\tjudged_miss\tunjudged\treturned\ttop10";
     private const string TopsHeader = "query\tpath\tpos\tfilename\ttext\tjudge";
-    private const string ScoresHeader = "query\tfilename\ttargets\tjudged\tpath\tscore\trank\ttop10\tpath_top1";
+    private const string ScoresHeader = "query\tfilename\ttargets\tjudged\tpath\tscore\trank\ttop10\tpath_top1\tscore_corrected";
+
+    /// <summary>score_corrected 列(製品の検索の結果の旗)を足す前の形式。読むだけ(旗は null = 補正の有無が分からない)。</summary>
+    private const string ScoresHeaderWithoutFlag = "query\tfilename\ttargets\tjudged\tpath\tscore\trank\ttop10\tpath_top1";
 
     public static void Write(string dir, RunData data, string summaryText)
     {
@@ -71,7 +74,8 @@ internal static class RunFiles
                 CheckCell(r.Query); CheckCell(r.Filename); CheckCell(r.Targets); CheckCell(r.Path);
                 sb.Append(r.Query).Append('\t').Append(r.Filename).Append('\t').Append(r.Targets).Append('\t')
                   .Append(r.Judged is null ? "" : r.Judged.Value ? "1" : "0").Append('\t').Append(r.Path).Append('\t')
-                  .Append(Num(r.Score)).Append('\t').Append(Num(r.Rank)).Append('\t').Append(r.Top10 ? "1" : "0").Append('\t').Append(Num(r.PathTop1)).Append('\n');
+                  .Append(Num(r.Score)).Append('\t').Append(Num(r.Rank)).Append('\t').Append(r.Top10 ? "1" : "0").Append('\t').Append(Num(r.PathTop1)).Append('\t')
+                  .Append(r.ScoreCorrected is null ? "" : r.ScoreCorrected.Value ? "1" : "0").Append('\n');
             }
             File.WriteAllText(Path.Combine(dir, ScoresFile), sb.ToString(), utf8);
         }
@@ -117,7 +121,10 @@ internal static class RunFiles
         if (File.Exists(Path.Combine(dir, ScoresFile)))
         {
             scores = [];
-            foreach ((string[] c, int line) in ReadRows(Path.Combine(dir, ScoresFile), ScoresHeader, 9))
+            string scoresPath = Path.Combine(dir, ScoresFile);
+            string? firstLine = File.ReadLines(scoresPath, new UTF8Encoding(false, true)).FirstOrDefault()?.TrimEnd('\r');
+            bool hasFlag = firstLine != ScoresHeaderWithoutFlag;   // 旗の無い古い形式でなければ新しい形式として読む(どちらでもなければ ReadRows が例外にする)
+            foreach ((string[] c, int line) in ReadRows(scoresPath, hasFlag ? ScoresHeader : ScoresHeaderWithoutFlag, hasFlag ? 10 : 9))
             {
                 double? Dbl(int i)
                 {
@@ -126,7 +133,8 @@ internal static class RunFiles
                 }
                 bool? judged = c[3] switch { "" => null, "1" => true, "0" => false, _ => throw new InvalidDataException($"{ScoresFile} の {line} 行目: judged が 1・0・空のどれでもない: {c[3]}") };
                 bool top10 = c[7] switch { "1" => true, "0" => false, _ => throw new InvalidDataException($"{ScoresFile} の {line} 行目: top10 が 1・0 のどちらでもない: {c[7]}") };
-                scores.Add(new ScoreRow(c[0], c[1], c[2], judged, c[4], Dbl(5), Dbl(6), top10, Dbl(8)));
+                bool? corrected = !hasFlag ? null : c[9] switch { "" => null, "1" => true, "0" => false, _ => throw new InvalidDataException($"{ScoresFile} の {line} 行目: score_corrected が 1・0・空のどれでもない: {c[9]}") };
+                scores.Add(new ScoreRow(c[0], c[1], c[2], judged, c[4], Dbl(5), Dbl(6), top10, Dbl(8), corrected));
             }
         }
         // top10.tsv も後から足した。無ければ null。あって壊れていれば例外
