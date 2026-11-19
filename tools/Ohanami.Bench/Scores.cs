@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Ohanami.Core;
+using Ohanami.Core.Search;
 
 namespace Ohanami.Bench;
 
@@ -16,8 +17,10 @@ namespace Ohanami.Bench;
 /// <paramref name="Judged"/> は qrels の判定(当たり = true。qrels に無ければ null)。
 /// <paramref name="Top10"/> はその経路の上位 10 件に入っていたか(precision@10 と同じ取り方: <see cref="Metrics.TopOf"/>)。
 /// <paramref name="PathTop1"/> はそのクエリでのその経路の 1 位のスコア(経路が何も返さなければ null)。1 位との差を、この行だけから出せるように持つ。
+/// <paramref name="ScoreCorrected"/> は、製品の検索の結果の旗(<see cref="PathOutcome.ScoreCorrected"/>): その経路の点が補正後の点か(融合後の行は null)。
+/// 旗の列が無い古い形式の run を読んだときも null(補正の有無は分からない)。
 /// </summary>
-internal sealed record ScoreRow(string Query, string Filename, string Targets, bool? Judged, string Path, double? Score, double? Rank, bool Top10, double? PathTop1);
+internal sealed record ScoreRow(string Query, string Filename, string Targets, bool? Judged, string Path, double? Score, double? Rank, bool Top10, double? PathTop1, bool? ScoreCorrected = null);
 
 /// <summary>段階の名前と、かかった秒数(run の所要時間の記録)。</summary>
 internal sealed record StageTime(string Name, double Seconds);
@@ -98,7 +101,7 @@ internal static class ScoreReport
     private static bool IsTarget(ScoreRow r, string set) => r.Targets.Split('|', StringSplitOptions.RemoveEmptyEntries).Contains(set, StringComparer.Ordinal);
 
     /// <summary>
-    /// 経路の cosine(スコア)の母集団。(クエリ, 画像) の組ごとに 1 件。
+    /// 経路のスコアの母集団。(クエリ, 画像) の組ごとに 1 件。
     /// 当たり / 外れ = qrels の判定、「上位 10」= その経路の上位 10 件に入っていたもの
     /// (ADR 0034 の線の置き方が使う母集団: 守る集合は「当たり・上位 10」、除く効き目を測る母集団は「外れ・上位 10」)。
     /// </summary>
@@ -135,7 +138,11 @@ internal static class ScoreReport
 
     // ------------------------------------------------------------------ 文章
 
-    /// <summary>run の summary に付ける、スコアの要約(経路ごと。見た目の経路は cosine のヒストグラムつき)。行が無ければ空の文字列。</summary>
+    /// <summary>
+    /// run の summary に付ける、スコアの要約(経路ごと。見た目の経路は点のヒストグラムつき)。行が無ければ空の文字列。
+    /// 見た目の経路の点は、順位を決めた点(ADR 0051)。補正をかけた検索では cosine − μ·r、かけない検索では cosine で、
+    /// 水準が違うので、製品の検索の結果の旗(<see cref="ScoreRow.ScoreCorrected"/>)で群に分けて出す(関門をここで計算し直さない)。旗の無い古い形式の run は、3 つ目の群にする。
+    /// </summary>
     public static string Render(IReadOnlyList<ScoreRow> rows)
     {
         if (rows.Count == 0) return "";
@@ -143,24 +150,23 @@ internal static class ScoreReport
         int pairs = rows.Count(x => x.Path == Metrics.Fused);
         sb.AppendLine($"[経路ごとのスコア(scores.tsv): qrels の判定済みの組と known-item の目的の画像、延べ {pairs} 組。各行は 件数 / 最小 / 10% / 25% / 中央値 / 75% / 90% / 最大]");
 
-        // ---- 見た目の経路の cosine
+        // ---- 見た目の経路の点(補正をかけた検索語とかけない検索語は、水準が違うので分ける)
         if (Of(rows, VisualPath).Any())
         {
-            sb.AppendLine("  見た目の経路の cosine(全画像に値がある。クエリが違っても同じ尺度として並べる)");
-            var pops = Populations(rows, VisualPath);
-            foreach ((string label, List<double> values) in pops) sb.AppendLine(DistributionLine(label, values, "F4"));
-            List<double> top1 = QueryTop1(rows, VisualPath);
-            sb.AppendLine(DistributionLine($"各クエリの 1 位の cosine({top1.Count} クエリ)", top1, "F4"));
-            sb.AppendLine(DistributionLine("1 位との差: known-item の目的(見た目)", TargetGapToTop1(rows, VisualPath, "visual"), "F4"));
-            sb.AppendLine(DistributionLine("1 位との差: known-item の目的(セリフ)", TargetGapToTop1(rows, VisualPath, "dialogue"), "F4"));
-            foreach (string set in BenchInputs.OptionalSets.Where(set => rows.Any(x => IsTarget(x, set))))
-                sb.AppendLine(DistributionLine($"1 位との差: known-item の目的({set})", TargetGapToTop1(rows, VisualPath, set), "F4"));
-            int top1Targets = TargetGapToTop1(rows, VisualPath).Count(g => g <= 0);
-            sb.AppendLine($"    目的の画像が見た目の経路の 1 位だった数: {top1Targets}");
-            sb.AppendLine();
-            List<(string Label, List<double> Values)> shown = pops.Where(p => p.Label is "判定が当たり" or "判定が外れ" or "当たりで、この経路の上位10" or "外れで、この経路の上位10").ToList();
-            shown.Add(("known-item の目的(全集合)", pops.Where(p => p.Label.StartsWith("known-item", StringComparison.Ordinal)).SelectMany(p => p.Values).ToList()));
-            sb.Append(Histograms(shown));
+            sb.AppendLine("  見た目の経路の点(全画像に値がある。順位を決めた点。補正をかけた検索語とかけない検索語で水準が違うので、2 つの群に分け、同じ群の中でだけ並べる)");
+            foreach (bool? corrected in new bool?[] { true, false, null })
+            {
+                List<ScoreRow> group = [.. rows.Where(r => r.Path != VisualPath || r.ScoreCorrected == corrected)];
+                if (!Of(group, VisualPath).Any()) continue;
+                int queries = Of(group, VisualPath).Select(r => r.Query).Distinct(StringComparer.Ordinal).Count();
+                sb.AppendLine(corrected switch
+                {
+                    true => $"  [補正をかけた検索語(結果の旗が補正あり): 点 = cosine − μ·r。{queries} クエリ]",
+                    false => $"  [補正をかけない検索語(結果の旗が補正なし): 点 = cosine。{queries} クエリ]",
+                    null => $"  [補正の有無が分からない検索語(旗の列が無い古い形式の run): 点の水準が混ざっている。{queries} クエリ]",
+                });
+                RenderVisualGroup(sb, group);
+            }
         }
 
         // ---- 全文の経路(スコアは BM25 で、クエリごとに尺度が違う。プールした分布は目安。入っていた数が主)
@@ -183,6 +189,25 @@ internal static class ScoreReport
             sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    /// <summary>見た目の経路の点の要約(1 つの群の分)。</summary>
+    private static void RenderVisualGroup(StringBuilder sb, IReadOnlyList<ScoreRow> rows)
+    {
+        var pops = Populations(rows, VisualPath);
+        foreach ((string label, List<double> values) in pops) sb.AppendLine(DistributionLine(label, values, "F4"));
+        List<double> top1 = QueryTop1(rows, VisualPath);
+        sb.AppendLine(DistributionLine($"各クエリの 1 位の点({top1.Count} クエリ)", top1, "F4"));
+        sb.AppendLine(DistributionLine("1 位との差: known-item の目的(見た目)", TargetGapToTop1(rows, VisualPath, "visual"), "F4"));
+        sb.AppendLine(DistributionLine("1 位との差: known-item の目的(セリフ)", TargetGapToTop1(rows, VisualPath, "dialogue"), "F4"));
+        foreach (string set in BenchInputs.OptionalSets.Where(set => rows.Any(x => IsTarget(x, set))))
+            sb.AppendLine(DistributionLine($"1 位との差: known-item の目的({set})", TargetGapToTop1(rows, VisualPath, set), "F4"));
+        int top1Targets = TargetGapToTop1(rows, VisualPath).Count(g => g <= 0);
+        sb.AppendLine($"    目的の画像が見た目の経路の 1 位だった数: {top1Targets}");
+        sb.AppendLine();
+        List<(string Label, List<double> Values)> shown = pops.Where(p => p.Label is "判定が当たり" or "判定が外れ" or "当たりで、この経路の上位10" or "外れで、この経路の上位10").ToList();
+        shown.Add(("known-item の目的(全集合)", pops.Where(p => p.Label.StartsWith("known-item", StringComparison.Ordinal)).SelectMany(p => p.Values).ToList()));
+        sb.Append(Histograms(shown));
     }
 
     private static string DistributionLine(string label, IReadOnlyCollection<double> values, string format)
@@ -220,7 +245,7 @@ internal static class ScoreReport
         if (every.Count == 0) return "";
         (double width, double start, int bins) = BinLayout(every.Min(), every.Max());
         var sb = new StringBuilder();
-        sb.AppendLine($"  見た目の経路の cosine のヒストグラム(区間の幅 {width.ToString("0.###", CultureInfo.InvariantCulture)}。区間は [下端, 上端)。棒の長さは母集団ごとの最大が {BarWidth} 文字)");
+        sb.AppendLine($"  見た目の経路の点のヒストグラム(区間の幅 {width.ToString("0.###", CultureInfo.InvariantCulture)}。区間は [下端, 上端)。棒の長さは母集団ごとの最大が {BarWidth} 文字)");
         foreach ((string label, List<double> values) in pops)
         {
             sb.AppendLine($"    {label}(n={values.Count})");

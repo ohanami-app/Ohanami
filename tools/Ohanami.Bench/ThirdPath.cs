@@ -267,7 +267,7 @@ internal static class ThirdPath
             known.AddRange(diagData.KnownItems.Where(r => r.Path == DiagPathId));
             known.AddRange(diagData.KnownItems.Where(r => r.Path == Metrics.Fused).Select(r => r with { Path = DiagFused3 }));
         }
-        return new RunData(known, precision, scores);
+        return new RunData(known, precision, scores, productData.Tops);
     }
 
     /// <summary>すべてのクエリに 3 本目(<paramref name="pathId"/>)を足した結果(製品の Collected の Responses・ByName を差し替えたもの)と、3 本目の母集団の大きさ。</summary>

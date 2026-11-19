@@ -41,7 +41,7 @@ public sealed class VisualPathKnownItemTests(ITestOutputHelper output)
         await ModelVerifier.VerifyTextSideAsync(modelDir, ModelCatalog.Current, TestContext.Current.CancellationToken);
         Siglip2Tokenizer tokenizer = Siglip2Tokenizer.Load(TestFiles.VerifiedModelFile("textual/tokenizer.json"));
         using Siglip2TextEncoder encoder = Siglip2TextEncoder.Create(modelDir, ModelCatalog.Current);
-        var path = new VisualPath(table, VisualPath.TextEncoderEmbedder(encoder, Task.FromResult(tokenizer)));
+        var path = new VisualPath(table, VisualPath.TextEncoderEmbedder(encoder, Task.FromResult(tokenizer)), null);
 
         int checkedRows = 0, differing = 0;
         var examples = new List<string>();

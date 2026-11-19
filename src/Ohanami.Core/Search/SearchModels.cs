@@ -45,8 +45,11 @@ public sealed record PathHit(string PathId, string? ModelId, double Rank, double
 /// <summary>経路ごとの説明。App は型で分岐する。</summary>
 public abstract record PathDetail;
 
-/// <summary>SigLIP2 の経路(特徴ベクトル検索)。検索語と画像のコサイン類似度。</summary>
-public sealed record VisualDetail(double Cosine) : PathDetail;
+/// <summary>
+/// SigLIP2 の経路(特徴ベクトル検索)。<paramref name="Score"/> は順位を決めた点(画面の「類似度」)、<paramref name="Cosine"/> は検索語のベクトルと画像のベクトルの元のコサイン。
+/// 補正をかけた検索(<see cref="PathOutcome.ScoreCorrected"/>)では、<paramref name="Score"/> = <paramref name="Cosine"/> − 画像ごとの補正値(ADR 0051)。かけない検索では同じ値。
+/// </summary>
+public sealed record VisualDetail(double Score, double Cosine) : PathDetail;
 
 /// <summary>元のテキスト上の範囲(UTF-16 の開始位置と長さ)。</summary>
 public sealed record TextSpan(int Start, int Length);
@@ -75,8 +78,11 @@ public sealed record TextDetail(IReadOnlyList<FieldMatch> Matches) : PathDetail
     public IReadOnlyList<string> FuzzyTerms { get; init; } = [];
 }
 
-/// <summary>経路の状態の報告。<paramref name="Population"/> は、その経路が順位を付けた画像の数(missing_since のパスしか無い画像を除く)。</summary>
-public sealed record PathOutcome(string PathId, string? ModelId, int Population, PathState State, string? Message);
+/// <summary>
+/// 経路の状態の報告。<paramref name="Population"/> は、その経路が順位を付けた画像の数(missing_since のパスしか無い画像を除く)。
+/// <paramref name="ScoreCorrected"/> は、この検索語で、この経路の点に補正をかけたか(特徴ベクトル検索だけ。ADR 0051)。
+/// </summary>
+public sealed record PathOutcome(string PathId, string? ModelId, int Population, PathState State, string? Message, bool ScoreCorrected = false);
 
 /// <summary>
 /// Ok = 結果を返した(<see cref="PathOutcome.Message"/> に、一部の語を除いたなどの注意が入ることがある)、NotReady = 準備中(ベクトルを読み込み中、全文検索の索引を作り直し中など。結果には入らない)、

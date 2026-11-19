@@ -14,6 +14,8 @@ internal delegate Task<float[]> QueryEmbedder(string text, CancellationToken ct)
 /// 見た目の経路(SigLIP2): クエリのベクトルと、メモリ上の全ベクトルとの内積(正規化済みなので cosine)を<b>全件</b>について計算し、
 /// 全件にスコアを付けて(密のまま)融合に渡す。上位 N 件に切ってから渡さない: 評価の数字(融合 tags あり precision@10 0.477、
 /// known-item 29/45。ADR 0033)が全件の順位での融合の結果で、回帰ベンチと比べられるようにするため。Limit は融合の後に適用する(<see cref="SearchService"/>)。
+/// <para>補正(<see cref="HubnessCorrection"/>。ADR 0051)を渡したときは、関門(<see cref="HubnessGate"/>)を通った検索語だけ、点 = cosine − 画像ごとの補正値 b(r) にする。
+/// 順位は補正後の点で付く。元の cosine は <see cref="VisualDetail.Cosine"/> に残る。関門の外の検索語は、cosine がそのまま点。</para>
 /// </summary>
 internal sealed class VisualPath : ISearchPath
 {
@@ -21,13 +23,19 @@ internal sealed class VisualPath : ISearchPath
 
     private readonly VectorTable _table;
     private readonly QueryEmbedder _embed;
+    private readonly HubnessCorrection? _correction;
 
-    public VisualPath(VectorTable table, QueryEmbedder embedder)
+    /// <param name="correction">点の補正。省略はできない(製品の呼び出しで引数を落とすと、補正が黙って外れるため)。
+    /// 製品は <see cref="HubnessCorrection.Default"/> を渡す。null を明示すると、どの検索語にも補正をかけない(補正を測らないテスト用)。
+    /// 補正の μ を作ったモデル・次元が表と違えば、ここで例外(黙って補正なしにしない)。</param>
+    public VisualPath(VectorTable table, QueryEmbedder embedder, HubnessCorrection? correction)
     {
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(embedder);
+        correction?.EnsureMatches(table.ModelId, table.Dim);
         _table = table;
         _embed = embedder;
+        _correction = correction;
     }
 
     public string PathId => Id;
@@ -65,17 +73,24 @@ internal sealed class VisualPath : ISearchPath
         if (q.Length != _table.Dim) throw new InvalidDataException($"クエリのベクトルの長さが {q.Length}(想定 {_table.Dim})。");
         foreach (float x in q) if (!float.IsFinite(x)) throw new InvalidDataException("クエリのベクトルに有限でない値がある。");
 
+        HubnessCorrection? correction = _correction is { } c && c.AppliesTo(query) ? c : null;
+        // 補正値 μ·r は、検索のたびに全画像で計算する(画像ごとに持っておけば省ける。Bench と順位を合わせるため、今は持たない。1 万枚での時間は測っていない)。
+
         VectorSnapshot snap = _table.Snapshot();   // この時点までに足されたベクトルだけを、全件
         // 上書きで置き換えられた古い行(snap.Valid が false)は飛ばす。無効な行が無ければ(ふつう)ハッシュの配列をそのまま渡す
-        var scores = new double[snap.LiveCount];
+        var cosines = new double[snap.LiveCount];
+        double[] scores = correction is null ? cosines : new double[snap.LiveCount];   // 補正しないときは同じ配列(点 = cosine)
+        bool corrected = correction is not null;
         if (snap.AllValid)
         {
             for (int i = 0; i < snap.Count; i++)
             {
                 if ((i & 1023) == 0) ct.ThrowIfCancellationRequested();
-                scores[i] = Dot(q, snap.Vector(i));
+                ReadOnlySpan<float> v = snap.Vector(i);
+                cosines[i] = Dot(q, v);
+                if (correction is not null) scores[i] = cosines[i] - correction.Bias(v);
             }
-            return PathSearchResult.Ok(new ArraySegment<string>(snap.Hashes, 0, snap.Count), scores, i => new VisualDetail(scores[i]));
+            return PathSearchResult.Ok(new ArraySegment<string>(snap.Hashes, 0, snap.Count), scores, i => new VisualDetail(scores[i], cosines[i]), scoreCorrected: corrected);
         }
         var liveHashes = new string[snap.LiveCount];
         int n = 0;
@@ -84,10 +99,12 @@ internal sealed class VisualPath : ISearchPath
             if ((i & 1023) == 0) ct.ThrowIfCancellationRequested();
             if (!snap.Valid[i]) continue;
             liveHashes[n] = snap.Hashes[i];
-            scores[n] = Dot(q, snap.Vector(i));
+            ReadOnlySpan<float> v = snap.Vector(i);
+            cosines[n] = Dot(q, v);
+            if (correction is not null) scores[n] = cosines[n] - correction.Bias(v);
             n++;
         }
-        return PathSearchResult.Ok(liveHashes, scores, i => new VisualDetail(scores[i]));
+        return PathSearchResult.Ok(liveHashes, scores, i => new VisualDetail(scores[i], cosines[i]), scoreCorrected: corrected);
     }
 
     /// <summary>内積(SIMD)。float で積和して double にする(1152 次元の cosine には十分な精度)。</summary>

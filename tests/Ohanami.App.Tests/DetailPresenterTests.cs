@@ -35,7 +35,7 @@ public sealed class DetailPresenterTests
 
     private static SearchResult Result(PathDetail? fulltext = null, double rank = 2, params string[] paths)
     {
-        var hits = new List<PathHit> { new("visual", "m", 3, 0.2, new VisualDetail(0.21)) };
+        var hits = new List<PathHit> { new("visual", "m", 3, 0.2, new VisualDetail(0.21, 0.21)) };
         if (fulltext is not null) hits.Add(new PathHit("fulltext", null, 1, 5.5, fulltext));
         return new SearchResult(Hash, paths.Length == 0 ? [@"C:\shots\a.png"] : paths, rank, 0.03, hits);
     }
@@ -270,6 +270,35 @@ public sealed class DetailPresenterTests
         Assert.DoesNotContain("visual", all, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("fulltext", all, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("cosine", all, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void The_similarity_shown_is_the_score_that_decided_the_rank_and_the_tooltip_says_so_only_when_the_query_was_corrected()
+    {
+        // 補正をかけた検索: 順位を決めた点(補正後 0.05)を出し、元のコサイン(0.21)は出さない
+        SearchResult corrected = new(Hash, [@"C:.png"], 2, 0.1, [new PathHit("visual", "m", 3, 0.05, new VisualDetail(0.05, 0.21))]);
+        PathOutcome[] correctedPaths = [new("visual", "m", 100, PathState.Ok, null, ScoreCorrected: true)];
+        (string Line, string? Tip) c = DetailPresenter.RankEntries(corrected, correctedPaths)[1];
+        Assert.Equal($"{TestWords.VisualWithModel}: 3 位 (類似度 0.0500)", c.Line);
+        Assert.DoesNotContain("0.2100", c.Line, StringComparison.Ordinal);
+        Assert.StartsWith("コサイン類似度 (検索の言葉と、画像の見た目の近さ) から、どの言葉にも近い画像の分を引いた値です。", c.Tip, StringComparison.Ordinal);
+        Assert.Contains("割合ではありません", c.Tip, StringComparison.Ordinal);
+        Assert.Contains("同じ検索の中", c.Tip, StringComparison.Ordinal);
+
+        // 補正をかけない検索: 引いたとは言わない
+        SearchResult plain = new(Hash, [@"C:.png"], 2, 0.1, [new PathHit("visual", "m", 3, 0.21, new VisualDetail(0.21, 0.21))]);
+        (string Line, string? Tip) p = DetailPresenter.RankEntries(plain, [new("visual", "m", 100, PathState.Ok, null)])[1];
+        Assert.Equal($"{TestWords.VisualWithModel}: 3 位 (類似度 0.2100)", p.Line);
+        Assert.DoesNotContain("どの言葉にも近い", p.Tip, StringComparison.Ordinal);
+        Assert.Contains("割合ではありません", p.Tip, StringComparison.Ordinal);
+
+        // どちらのツールチップにも、値の水準の目安は書かない(補正をかけた検索とかけない検索で、水準が違う)
+        foreach (string? tip in new[] { c.Tip, p.Tip })
+        {
+            Assert.DoesNotContain("0.1 前後", tip, StringComparison.Ordinal);
+            Assert.DoesNotContain("前後", tip, StringComparison.Ordinal);
+            Assert.DoesNotContain("1 に近い", tip, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

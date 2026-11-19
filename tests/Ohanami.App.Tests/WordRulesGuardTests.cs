@@ -315,7 +315,7 @@ public sealed class WordRulesGuardTests
     private static SearchResult Result(PathDetail? fulltext, params string[] hitIds)
     {
         var hits = new List<PathHit>();
-        if (hitIds.Contains("visual")) hits.Add(new PathHit("visual", "m", 3, 0.2, new VisualDetail(0.21)));
+        if (hitIds.Contains("visual")) hits.Add(new PathHit("visual", "m", 3, 0.2, new VisualDetail(0.21, 0.21)));
         if (hitIds.Contains("fulltext") && fulltext is not null) hits.Add(new PathHit("fulltext", null, 1, 5.5, fulltext));
         return new SearchResult(Hash, [@"C:\shots\a.png"], 2, 0.03, hits);
     }
@@ -338,6 +338,7 @@ public sealed class WordRulesGuardTests
         var states = new List<PathOutcome?> { null };
         foreach (PathState st in Enum.GetValues<PathState>())
             foreach (string? message in new[] { null, "メッセージ", "全文検索のインデックスを作り直している" }) states.Add(Outcome("visual", st, message));
+        states.Add(Outcome("visual", PathState.Ok) with { ScoreCorrected = true });   // 補正をかけた検索(類似度のツールチップが変わる。ADR 0051)
         var ftStates = new List<PathOutcome?> { null };
         foreach (PathState st in Enum.GetValues<PathState>())
             foreach (string? message in new[] { null, "検索できる語を除いた: 、", "全文検索のインデックスを作り直している" }) ftStates.Add(Outcome("fulltext", st, message, population: 7));
@@ -376,12 +377,14 @@ public sealed class WordRulesGuardTests
         var detail = new ImageDetail(Hash, 1234567, "png", 1920, 1080, T0, [new ImagePathDetail(@"C:\shots\a.png", false, null, T0, 1234567), new ImagePathDetail(@"C:\old\a.png", true, T0, T0, 1234567)], stages, new CaptionDetail("m", "文字", "説明", ["タグ"], T0), ["手動"]);
         var detailNoSize = detail with { Width = null, Height = null, Caption = null, ManualTags = [] };
         PathOutcome[] both = [Outcome("visual", PathState.Ok), Outcome("fulltext", PathState.Ok)];
+        PathOutcome[] bothCorrected = [Outcome("visual", PathState.Ok) with { ScoreCorrected = true }, Outcome("fulltext", PathState.Ok)];
         var loads = new List<DetailLoad> { DetailLoad.Loaded(detail), DetailLoad.Loaded(detailNoSize), DetailLoad.Loading, DetailLoad.RecordMissing, DetailLoad.Failed("llama-server が失敗した") };
         foreach (DetailLoad load in loads)
             foreach ((bool fromSearch, bool fromRecent) in new[] { (true, false), (false, false), (false, true) })
                 foreach (SearchResult r in new[] { Result(TextOf(), "visual", "fulltext"), Result(null, "visual") })
+                    foreach (PathOutcome[] outcomes in new[] { both, bothCorrected })
                 {
-                    DetailModel m = DetailPresenter.Build(r, both, load, Utc, fromSearch, fromRecent, noTextIndexHint: true);
+                    DetailModel m = DetailPresenter.Build(r, outcomes, load, Utc, fromSearch, fromRecent, noTextIndexHint: true);
                     c.Add("right:DetailPresenter.Build.Title", m.Title);
                     c.AddAll("right:DetailPresenter.Build.RankLines", m.RankLines);
                     c.AddAll("right:DetailPresenter.Build.RankTips", m.RankTips);

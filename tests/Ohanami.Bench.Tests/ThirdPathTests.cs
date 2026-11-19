@@ -34,7 +34,7 @@ public sealed class ThirdPathTests
         var results = new List<SearchResult>();
         foreach (int i in fused.Order)
         {
-            var hits = new List<PathHit> { new("visual", "m", vis.MeanRank[i], vis.Score[i], new VisualDetail(vis.Score[i])) };
+            var hits = new List<PathHit> { new("visual", "m", vis.MeanRank[i], vis.Score[i], new VisualDetail(vis.Score[i], vis.Score[i])) };
             if (ft is not null && ft.Present[i]) hits.Add(new PathHit("fulltext", null, ft.MeanRank[i], ft.Score[i], new TextDetail([])));
             results.Add(new SearchResult(Fx.Hash(files[i]), [@"C:\images\" + files[i]], fused.MeanRank[i], fused.Score[i], hits));
         }

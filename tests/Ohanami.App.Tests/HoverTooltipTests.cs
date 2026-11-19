@@ -353,7 +353,7 @@ public sealed class HoverTooltipTests
         var panel = new ResultsPanel(new TestLog(), _ => { }, new FakeShell())
         {
             DisplayZone = TimeZoneInfo.Utc,
-            SearchFunc = (q, _) => Task.FromResult(new SearchResponse(q.Text, [new SearchResult(H('a'), [@"C:\shots\a.png"], 1, 0.5, [new PathHit("visual", "m", 1, 0.2, new VisualDetail(0.2))])], [], 1, 1, TimeSpan.Zero)),
+            SearchFunc = (q, _) => Task.FromResult(new SearchResponse(q.Text, [new SearchResult(H('a'), [@"C:\shots\a.png"], 1, 0.5, [new PathHit("visual", "m", 1, 0.2, new VisualDetail(0.2, 0.2))])], [], 1, 1, TimeSpan.Zero)),
             RecentFunc = (_, _) => Task.FromResult(new RecentResponse([new RecentImage(H('b'), [@"C:\shots\b.png"], new DateTimeOffset(2026, 11, 10, 12, 5, 0, TimeSpan.Zero))], 1, TimeSpan.Zero)),
         };
         surface = new FakeTooltipSurface();

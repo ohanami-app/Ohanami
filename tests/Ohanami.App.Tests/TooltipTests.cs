@@ -14,7 +14,7 @@ public sealed class TooltipTests
             ["C:\\shots\\one.png", "D:\\copy\\one.png", "E:\\other\\one.png"],
             Rank: 23.5,
             FusedScore: 0.016129,
-            Hits: [new PathHit("visual", "model-1", 23.5, 0.1234, new VisualDetail(0.1234))]);
+            Hits: [new PathHit("visual", "model-1", 23.5, 0.1234, new VisualDetail(0.1234, 0.1234))]);
 
         string text = ResultsPanel.BuildTooltip(result);
 

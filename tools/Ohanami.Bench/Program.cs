@@ -26,6 +26,9 @@ internal static class Program
                    リポジトリの外)を読み、製品の検索の結果に 3 本目(cosine の降順)を足して、今の 2 本と同じ RRF(k = 60、重みなし)で融合した fused3 を、run と同じ形で <root>/runs/<時刻>-<label>/ に保存する。
                    先に、同じ RankedPath.Rrf で今の 2 本を融合して、製品の fused と全クエリで一致することを確かめる(一致しなければ止まる)。--embeddings は主(説明文 + タグ)、--diagnostic-embeddings は診断(説明文だけ。known-item の順位だけ)。--classes は、今の外れの分類の割り当て(set・query・filename・class の TSV か、set・index・fused_rank_at_classification・class・doubtful の TSV。後者は集合の中の番号で指し、今の融合の順位と一致しなければ止まる。
                    測る前に固定したもの)。出力は数字だけの要約(known-item ごとの順位の表、U・H3・G・L、precision@10 の Δ と 3 層・対の標準誤差)と、クエリ・ファイル名つきの third-path-known-items.tsv。判定・採否はしない。
+          hubness-mean [--reference <参照の語の一覧>] [--models <dir>] [--out <生成する .g.cs>]
+                   特徴ベクトル検索の補正(ADR 0051)の μ を作る。参照の語の一覧(既定 = tools/Ohanami.Bench/hubness-reference-ja.txt)の各語を、製品と同じテキスト埋め込み(CPU)でベクトルにして平均を取り、
+                   Core の生成ソース(既定 = src/Ohanami.Core/Embedding/Generated/HubnessReferenceMean.g.cs)に、model_id・一覧の SHA-256・語数と一緒に書く。DB・GPU・画像は使わない。
           import-s1 --s1-run <VLM の評価の run のフォルダ> [--images <dir>] [--models <dir>] [--root <dir>] [--spikes <dir>]
                    評価の VLM の出力(1030 枚)を、製品の captions と全文検索の索引に取り込む(VLM を回さずに全文検索・融合を測るため)。
                    取り込む前に、製品の VLM の構成が VLM の評価の run と同じことを確かめ、違えば止まる。何回実行しても同じ結果。
@@ -85,6 +88,7 @@ internal static class Program
             {
                 "run" => await RunAsync(flags, root, cts.Token),
                 "third-path" => await ThirdPathAsync(flags, root, cts.Token),
+                "hubness-mean" => HubnessMeanCommand(flags),
                 "import-s1" => await ImportVlmEvalAsync(flags, root, cts.Token),
                 "check-s2" => CheckSearchEval(flags, root, positional),
                 "judge" => Judge(flags, root, positional),
@@ -146,6 +150,22 @@ internal static class Program
             else positional.Add(args[i]);
         }
         return (args[0], flags, positional);
+    }
+
+    // ------------------------------------------------------------------ hubness-mean
+
+    private static int HubnessMeanCommand(Dictionary<string, string> flags)
+    {
+        string models = Required(flags, "--models", "OHANAMI_MODELS_DIR", "models/ に当たるディレクトリ");
+        string referencePath = Path.GetFullPath(flags.GetValueOrDefault("--reference") ?? HubnessMean.FindInRepository(Path.Combine("tools", "Ohanami.Bench", HubnessMean.ReferenceFileName)));
+        string outPath = Path.GetFullPath(flags.GetValueOrDefault("--out") ?? HubnessMean.FindInRepository(HubnessMean.GeneratedRelativePath));
+        (IReadOnlyList<string> words, string sha) = HubnessMean.ReadReference(referencePath);
+        float[] mean = HubnessMean.ComputeMean(models, words, Console.WriteLine);
+        string modelId = Ohanami.Core.Models.ModelCatalog.Current.ModelId;
+        File.WriteAllText(outPath, HubnessMean.RenderSource(modelId, sha, words.Count, mean), new System.Text.UTF8Encoding(false));
+        Console.WriteLine($"μ を書いた: {outPath}");
+        Console.WriteLine($"  参照 {words.Count} 語、一覧の SHA-256 {sha}、model_id {modelId}、次元 {mean.Length}");
+        return 0;
     }
 
     // ------------------------------------------------------------------ run

@@ -134,8 +134,11 @@ public sealed class OhanamiCore : IAsyncDisposable
     /// </summary>
     public static ModelLabels ModelLabels { get; } = new(ModelCatalog.DisplayName, VlmCatalog.DisplayName);
 
-    private OhanamiCore(OhanamiDatabase db, CoreOptions options, TimeProvider time)
+    private readonly QueryEmbedder? _queryEmbedderForTests;
+
+    private OhanamiCore(OhanamiDatabase db, CoreOptions options, TimeProvider time, QueryEmbedder? queryEmbedderForTests)
     {
+        _queryEmbedderForTests = queryEmbedderForTests;
         _db = db;
         _options = options;
         _time = time;
@@ -184,10 +187,11 @@ public sealed class OhanamiCore : IAsyncDisposable
 
         QueryEmbedder queryEmbedder = async (text, ct) =>
         {
+            if (_queryEmbedderForTests is { } fake) return await fake(text, ct).ConfigureAwait(false);
             Siglip2TextEncoder encoder = await _textEncoder.Task.WaitAsync(ct).ConfigureAwait(false);
             return await VisualPath.TextEncoderEmbedder(encoder, _tokenizer.Task)(text, ct).ConfigureAwait(false);
         };
-        Search = new SearchService(db, [new VisualPath(_vectors, queryEmbedder), new FullTextPath(db, _ftsIndex, options.Log)], _vectors);
+        Search = new SearchService(db, [new VisualPath(_vectors, queryEmbedder, HubnessCorrection.Default), new FullTextPath(db, _ftsIndex, options.Log)], _vectors);
         Thumbnails = new ThumbnailService(db, options.ThumbnailDirectory);
     }
 
@@ -198,8 +202,11 @@ public sealed class OhanamiCore : IAsyncDisposable
     public static Task<OhanamiCore> OpenAsync(CoreOptions options, CancellationToken ct = default) =>
         OpenAsync(options, configureNative: true, time: null, ct);
 
-    /// <summary>テスト用: Configure(プロセス全体の設定)を行わない / TimeProvider を替えられる。</summary>
-    internal static async Task<OhanamiCore> OpenAsync(CoreOptions options, bool configureNative, TimeProvider? time, CancellationToken ct)
+    /// <summary>
+    /// テスト用: Configure(プロセス全体の設定)を行わない / TimeProvider を替えられる。
+    /// <paramref name="queryEmbedderForTests"/> は、検索語のベクトルを作る関数を、モデルの実物の代わりに差す(null なら実物)。開いたあとは変わらない。
+    /// </summary>
+    internal static async Task<OhanamiCore> OpenAsync(CoreOptions options, bool configureNative, TimeProvider? time, CancellationToken ct, QueryEmbedder? queryEmbedderForTests = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.DatabasePath);
@@ -214,7 +221,7 @@ public sealed class OhanamiCore : IAsyncDisposable
         OhanamiCore core;
         try
         {
-            core = new OhanamiCore(db, options, time ?? TimeProvider.System);
+            core = new OhanamiCore(db, options, time ?? TimeProvider.System, queryEmbedderForTests);
         }
         catch
         {
@@ -273,6 +280,9 @@ public sealed class OhanamiCore : IAsyncDisposable
 
     /// <summary>テスト用: DB への窓口。</summary>
     internal OhanamiDatabase DatabaseForTests => _db;
+
+    /// <summary>テスト用: 特徴ベクトル検索の表(合成のベクトルを足す)。</summary>
+    internal VectorTable VectorsForTests => _vectors;
 
     /// <summary>テスト用: フォルダの監視(<see cref="CoreOptions.WatchFolders"/> が false なら null)。</summary>
     internal FolderWatcher? FolderWatcherForTests => _watcher;

@@ -102,7 +102,7 @@ public sealed class SearchService
             okRuns.Add(run);
             ranked.Add(RankedPath.Sparse(n, hits));
             positions.Add(pos);
-            outcomes.Add(new PathOutcome(run.Path.PathId, run.Path.ModelId, hits.Count, PathState.Ok, ok.Message));
+            outcomes.Add(new PathOutcome(run.Path.PathId, run.Path.ModelId, hits.Count, PathState.Ok, ok.Message, ok.ScoreCorrected));
         }
 
         var results = new List<SearchResult>();

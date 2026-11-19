@@ -14,14 +14,18 @@ internal sealed class PathSearchResult
 {
     public PathState State { get; }
     public string? Message { get; }
+
+    /// <summary>この検索語で、点に補正をかけたか(<see cref="PathOutcome.ScoreCorrected"/> に載る)。</summary>
+    public bool ScoreCorrected { get; }
     public IReadOnlyList<string> Hashes { get; }
     public IReadOnlyList<double> Scores { get; }
     private readonly Func<int, PathDetail> _detail;
     private readonly Action<IReadOnlyList<int>>? _prepare;
 
-    private PathSearchResult(PathState state, string? message, IReadOnlyList<string> hashes, IReadOnlyList<double> scores, Func<int, PathDetail> detail, Action<IReadOnlyList<int>>? prepare)
+    private PathSearchResult(PathState state, string? message, IReadOnlyList<string> hashes, IReadOnlyList<double> scores, Func<int, PathDetail> detail, Action<IReadOnlyList<int>>? prepare, bool scoreCorrected = false)
     {
         State = state;
+        ScoreCorrected = scoreCorrected;
         Message = message;
         Hashes = hashes;
         Scores = scores;
@@ -31,11 +35,12 @@ internal sealed class PathSearchResult
 
     /// <param name="message">結果は返したが、伝えたいこと(例: 検索できない語を除いて引いた)。<see cref="PathOutcome.Message"/> に載る。</param>
     /// <param name="prepare">詳細の準備(<see cref="PrepareDetails"/>)。経路が詳細をバッチで作りたいときだけ渡す(見た目の経路は何もしない)。</param>
+    /// <param name="scoreCorrected">点に補正をかけた(見た目の経路が、関門を通った検索語に)。</param>
     public static PathSearchResult Ok(
-        IReadOnlyList<string> hashes, IReadOnlyList<double> scores, Func<int, PathDetail> detail, string? message = null, Action<IReadOnlyList<int>>? prepare = null)
+        IReadOnlyList<string> hashes, IReadOnlyList<double> scores, Func<int, PathDetail> detail, string? message = null, Action<IReadOnlyList<int>>? prepare = null, bool scoreCorrected = false)
     {
         if (hashes.Count != scores.Count) throw new ArgumentException("ハッシュとスコアの数が違う");
-        return new PathSearchResult(PathState.Ok, message, hashes, scores, detail, prepare);
+        return new PathSearchResult(PathState.Ok, message, hashes, scores, detail, prepare, scoreCorrected);
     }
 
     public static PathSearchResult NotReady(string message) => new(PathState.NotReady, message, [], [], static _ => throw new InvalidOperationException(), null);

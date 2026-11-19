@@ -152,7 +152,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
         foreach ((int image, double angle) in vectors) await AddVectorAsync(_fx.Db, embeddingModel, Hash(image), Unit(angle));
         var table = new VectorTable(embeddingModel, Dim);
         await table.LoadAsync(_fx.Db, Ct);
-        var visual = new VisualPath(table, (_, _) => Task.FromResult(Unit(0)));
+        var visual = new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null);
         return (new SearchService(_fx.Db, [visual, new FullTextPath(_fx.Db, _fx.Index)], table), table);
     }
 
@@ -239,7 +239,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
         await AddVectorAsync(_fx.Db, model, Hash(2), Unit(20));
         var table = new VectorTable(model, Dim);
         await table.LoadAsync(_fx.Db, Ct);
-        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0))), new FullTextPath(_fx.Db, unchecked1)], table);
+        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null), new FullTextPath(_fx.Db, unchecked1)], table);
 
         SearchResponse r = await service.SearchAsync(new SearchQuery("セリフ"), Ct);
 
@@ -298,7 +298,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
         await AddVectorAsync(_fx.Db, model, Hash(1), Unit(10));
         var table = new VectorTable(model, Dim);
         await table.LoadAsync(_fx.Db, Ct);
-        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0))), new FullTextPath(_fx.Db, broken)], table);
+        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null), new FullTextPath(_fx.Db, broken)], table);
 
         SearchResponse r = await service.SearchAsync(new SearchQuery("セリフ"), Ct);
 
@@ -469,7 +469,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
             var prepared = new List<int[]>();
             var path = new FakePath("probe", null, () => PathSearchResult.Ok(
                 hashes, scores,
-                detail: i => { events.Add("detail:" + i); return new VisualDetail(scores[i]); },
+                detail: i => { events.Add("detail:" + i); return new VisualDetail(scores[i], scores[i]); },
                 prepare: indices => { events.Add("prepare"); prepared.Add(indices.ToArray()); }));
             var service = new SearchService(db, [path], new VectorTable("none", Dim));
 
@@ -492,8 +492,8 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
             var preparedA = new List<int[]>();
             var preparedB = new List<int[]>();
             // 経路 A: 画像 1〜4。経路 B: 画像 4 と 2 だけ(位置は 0 と 1)
-            var a = new FakePath("a", null, () => PathSearchResult.Ok([Hash(1), Hash(2), Hash(3), Hash(4)], [4, 3, 2, 1], i => new VisualDetail(i), prepare: x => preparedA.Add(x.ToArray())));
-            var b = new FakePath("b", null, () => PathSearchResult.Ok([Hash(4), Hash(2)], [9, 8], i => new VisualDetail(i), prepare: x => preparedB.Add(x.ToArray())));
+            var a = new FakePath("a", null, () => PathSearchResult.Ok([Hash(1), Hash(2), Hash(3), Hash(4)], [4, 3, 2, 1], i => new VisualDetail(i, i), prepare: x => preparedA.Add(x.ToArray())));
+            var b = new FakePath("b", null, () => PathSearchResult.Ok([Hash(4), Hash(2)], [9, 8], i => new VisualDetail(i, i), prepare: x => preparedB.Add(x.ToArray())));
             var service = new SearchService(db, [a, b], new VectorTable("none", Dim));
 
             SearchResponse r = await service.SearchAsync(new SearchQuery("q", Limit: 10), Ct);
