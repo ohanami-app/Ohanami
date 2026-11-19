@@ -25,9 +25,10 @@ internal sealed class VisualPath : ISearchPath
     private readonly QueryEmbedder _embed;
     private readonly HubnessCorrection? _correction;
 
-    /// <param name="correction">点の補正。null なら、どの検索語にも補正をかけない(テスト用。製品は <see cref="HubnessCorrection.Default"/> を渡す)。
+    /// <param name="correction">点の補正。省略はできない(製品の呼び出しで引数を落とすと、補正が黙って外れるため)。
+    /// 製品は <see cref="HubnessCorrection.Default"/> を渡す。null を明示すると、どの検索語にも補正をかけない(補正を測らないテスト用)。
     /// 補正の μ を作ったモデル・次元が表と違えば、ここで例外(黙って補正なしにしない)。</param>
-    public VisualPath(VectorTable table, QueryEmbedder embedder, HubnessCorrection? correction = null)
+    public VisualPath(VectorTable table, QueryEmbedder embedder, HubnessCorrection? correction)
     {
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(embedder);
@@ -73,6 +74,7 @@ internal sealed class VisualPath : ISearchPath
         foreach (float x in q) if (!float.IsFinite(x)) throw new InvalidDataException("クエリのベクトルに有限でない値がある。");
 
         HubnessCorrection? correction = _correction is { } c && c.AppliesTo(query) ? c : null;
+        // 補正値 μ·r は、検索のたびに全画像で計算する(画像ごとに持っておけば省ける。Bench と順位を合わせるため、今は持たない。1 万枚での時間は測っていない)。
 
         VectorSnapshot snap = _table.Snapshot();   // この時点までに足されたベクトルだけを、全件
         // 上書きで置き換えられた古い行(snap.Valid が false)は飛ばす。無効な行が無ければ(ふつう)ハッシュの配列をそのまま渡す

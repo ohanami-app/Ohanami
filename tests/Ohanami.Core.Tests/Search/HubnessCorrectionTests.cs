@@ -145,7 +145,7 @@ public sealed class HubnessCorrectionTests
     {
         var correction = new HubnessCorrection("model-x", Mean(1.0, 0));
         VectorTable table = ReadyTable("model-x", (1, 0), (2, 40));
-        PathSearchResult plain = await new VisualPath(table, (_, _) => Task.FromResult(Unit(0))).SearchAsync("猫", TestContext.Current.CancellationToken);
+        PathSearchResult plain = await new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null).SearchAsync("猫", TestContext.Current.CancellationToken);
         PathSearchResult corrected = await new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), correction).SearchAsync("猫", TestContext.Current.CancellationToken);
 
         Assert.True(plain.Scores[0] > plain.Scores[1]);                   // 補正なし: 画像 1 が上
@@ -175,7 +175,7 @@ public sealed class HubnessCorrectionTests
     public async Task Without_a_correction_no_query_is_corrected()
     {
         VectorTable table = ReadyTable("model-x", (1, 0), (2, 40));
-        PathSearchResult r = await new VisualPath(table, (_, _) => Task.FromResult(Unit(0))).SearchAsync("猫", TestContext.Current.CancellationToken);
+        PathSearchResult r = await new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null).SearchAsync("猫", TestContext.Current.CancellationToken);
         Assert.False(r.ScoreCorrected);
         Assert.Equal(1.0, r.Scores[0], 6);
     }

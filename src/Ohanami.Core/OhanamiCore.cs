@@ -184,6 +184,7 @@ public sealed class OhanamiCore : IAsyncDisposable
 
         QueryEmbedder queryEmbedder = async (text, ct) =>
         {
+            if (QueryEmbedderForTests is { } fake) return await fake(text, ct).ConfigureAwait(false);
             Siglip2TextEncoder encoder = await _textEncoder.Task.WaitAsync(ct).ConfigureAwait(false);
             return await VisualPath.TextEncoderEmbedder(encoder, _tokenizer.Task)(text, ct).ConfigureAwait(false);
         };
@@ -273,6 +274,12 @@ public sealed class OhanamiCore : IAsyncDisposable
 
     /// <summary>テスト用: DB への窓口。</summary>
     internal OhanamiDatabase DatabaseForTests => _db;
+
+    /// <summary>テスト用: 特徴ベクトル検索の表(合成のベクトルを足す)。</summary>
+    internal VectorTable VectorsForTests => _vectors;
+
+    /// <summary>テスト用: 検索語のベクトルを作る関数を、モデルの実物の代わりに差す(null なら実物)。</summary>
+    internal QueryEmbedder? QueryEmbedderForTests { get; set; }
 
     /// <summary>テスト用: フォルダの監視(<see cref="CoreOptions.WatchFolders"/> が false なら null)。</summary>
     internal FolderWatcher? FolderWatcherForTests => _watcher;

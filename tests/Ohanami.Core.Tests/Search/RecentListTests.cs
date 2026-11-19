@@ -25,7 +25,7 @@ public sealed class RecentListTests
         long folder = await AddFolderAsync(db);
         var table = new VectorTable(model, Dim);
         await table.LoadAsync(db, Ct);
-        var path = new VisualPath(table, (_, _) => Task.FromResult(Unit(0)));
+        var path = new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null);
         return (dir, db, new SearchService(db, [path], table), folder);
     }
 

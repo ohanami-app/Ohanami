@@ -138,11 +138,34 @@ public sealed class ScoreReportTests
         Assert.Contains("判定が当たり: n=2  0.1000 / 0.1100 / 0.1250 / 0.1500 / 0.1750 / 0.1900 / 0.2000", text);
         Assert.Contains("外れで、この経路の上位10: n=1  0.2500 / 0.2500 / 0.2500 / 0.2500 / 0.2500 / 0.2500 / 0.2500", text);
         Assert.Contains("目的で、融合の上位300件以内: n=1", text);
-        Assert.Contains("各クエリの 1 位の cosine(1 クエリ): n=1  0.3000", text);
+        Assert.Contains("各クエリの 1 位の点(1 クエリ): n=1  0.3000", text);
         Assert.Contains("1 位との差: known-item の目的(見た目): n=1  0.0000", text);
         Assert.Contains("1 位との差: known-item の目的(セリフ): n=1  0.1800", text);
         Assert.Contains("目的の画像が見た目の経路の 1 位だった数: 1", text);
         Assert.Contains("ヒストグラム", text);
+    }
+
+    [Fact]
+    public void The_visual_scores_are_split_into_queries_with_the_correction_and_queries_without_it()
+    {
+        // 点の水準が違う(補正をかけた検索語は cosine − μ·r)ので、混ぜた 1 つの分布にしない。関門は製品と同じ(日本語の文字を含み 8 文字以下)
+        ScoreRow Vq(string q, double score) => new(q, "x.png", "visual", true, "visual", score, 1, true, score);
+        string text = ScoreReport.Render([Vq("夜の駅", 0.05), Vq("雨の窓辺", 0.07), Vq("night station", 0.20), Vq("これは九文字を超える長い日本語の文", 0.22)]);
+
+        int corrected = text.IndexOf("補正をかけた検索語:", StringComparison.Ordinal);
+        int plain = text.IndexOf("補正をかけない検索語:", StringComparison.Ordinal);
+        Assert.InRange(corrected, 0, plain - 1);
+        string correctedPart = text[corrected..plain], plainPart = text[plain..];
+        Assert.Contains("2 クエリ", correctedPart, StringComparison.Ordinal);
+        Assert.Contains("各クエリの 1 位の点(2 クエリ): n=2  0.0500 / 0.0520 / 0.0550 / 0.0600 / 0.0650 / 0.0680 / 0.0700", correctedPart, StringComparison.Ordinal);
+        Assert.Contains("2 クエリ", plainPart, StringComparison.Ordinal);
+        Assert.Contains("各クエリの 1 位の点(2 クエリ): n=2  0.2000 / 0.2020 / 0.2050 / 0.2100 / 0.2150 / 0.2180 / 0.2200", plainPart, StringComparison.Ordinal);
+        Assert.DoesNotContain("同じ尺度", text, StringComparison.Ordinal);
+
+        // 片方の群しか無ければ、その群だけを出す
+        string onlyPlain = ScoreReport.Render([Vq("night station", 0.20)]);
+        Assert.DoesNotContain("補正をかけた検索語:", onlyPlain, StringComparison.Ordinal);
+        Assert.Contains("補正をかけない検索語:", onlyPlain, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -34,7 +34,7 @@ public sealed class VisualPathTests
     public async Task Scores_every_vector_with_its_cosine_to_the_query_in_table_order()
     {
         VectorTable table = ReadyTable((1, 0), (2, 30), (3, 60), (4, 90), (5, 180));
-        var path = new VisualPath(table, Fixed(Unit(0)));
+        var path = new VisualPath(table, Fixed(Unit(0)), null);
         PathSearchResult r = await path.SearchAsync("anything", TestContext.Current.CancellationToken);
 
         Assert.Equal(Ohanami.Core.PathState.Ok, r.State);
@@ -69,7 +69,7 @@ public sealed class VisualPathTests
         for (int i = 0; i < 200; i++) { float[] v = Rand(); vectors.Add(v); table.Add(Hash(i), v); }
         SetReady(table);
         float[] q = Rand();
-        PathSearchResult r = await new VisualPath(table, Fixed(q)).SearchAsync("q", TestContext.Current.CancellationToken);
+        PathSearchResult r = await new VisualPath(table, Fixed(q), null).SearchAsync("q", TestContext.Current.CancellationToken);
         for (int i = 0; i < vectors.Count; i++)
         {
             double naive = 0;
@@ -100,7 +100,7 @@ public sealed class VisualPathTests
         QueryEmbedder counting = (_, _) => { embedCalls++; return Task.FromResult(Unit(0)); };
         var table = new VectorTable("m", Dim);
         table.Add(Hash(1), Unit(10));
-        var path = new VisualPath(table, counting);
+        var path = new VisualPath(table, counting, null);
 
         PathSearchResult notLoaded = await path.SearchAsync("q", TestContext.Current.CancellationToken);
         Assert.Equal(Ohanami.Core.PathState.NotReady, notLoaded.State);
@@ -130,7 +130,7 @@ public sealed class VisualPathTests
             await AddVectorRowAsync(db, model, Hash(1), new byte[3]);
             var table = new VectorTable(model, Dim);
             await Assert.ThrowsAsync<InvalidDataException>(() => table.LoadAsync(db, TestContext.Current.CancellationToken));
-            var e = await Assert.ThrowsAsync<InvalidOperationException>(() => new VisualPath(table, Fixed(Unit(0))).SearchAsync("q", TestContext.Current.CancellationToken));
+            var e = await Assert.ThrowsAsync<InvalidOperationException>(() => new VisualPath(table, Fixed(Unit(0)), null).SearchAsync("q", TestContext.Current.CancellationToken));
             Assert.Contains("読み込みに失敗", e.Message, StringComparison.Ordinal);
         }
     }
@@ -139,17 +139,17 @@ public sealed class VisualPathTests
     public async Task A_query_vector_of_the_wrong_length_or_with_non_finite_values_is_rejected()
     {
         VectorTable table = ReadyTable((1, 0));
-        await Assert.ThrowsAsync<InvalidDataException>(() => new VisualPath(table, Fixed(new float[Dim + 1])).SearchAsync("q", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => new VisualPath(table, Fixed(new float[Dim + 1]), null).SearchAsync("q", TestContext.Current.CancellationToken));
         float[] nan = Unit(0);
         nan[2] = float.NaN;
-        await Assert.ThrowsAsync<InvalidDataException>(() => new VisualPath(table, Fixed(nan)).SearchAsync("q", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => new VisualPath(table, Fixed(nan), null).SearchAsync("q", TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task An_empty_table_gives_an_ok_result_with_an_empty_population()
     {
         VectorTable table = ReadyTable();
-        PathSearchResult r = await new VisualPath(table, Fixed(Unit(0))).SearchAsync("q", TestContext.Current.CancellationToken);
+        PathSearchResult r = await new VisualPath(table, Fixed(Unit(0)), null).SearchAsync("q", TestContext.Current.CancellationToken);
         Assert.Equal(Ohanami.Core.PathState.Ok, r.State);
         Assert.Empty(r.Hashes);
     }
@@ -159,7 +159,7 @@ public sealed class VisualPathTests
     {
         VectorTable table = ReadyTable((1, 0), (2, 45));
         var gate = new TaskCompletionSource<float[]>();
-        var path = new VisualPath(table, (_, _) => gate.Task);
+        var path = new VisualPath(table, (_, _) => gate.Task, null);
         Task<PathSearchResult> pending = path.SearchAsync("q", TestContext.Current.CancellationToken);
         table.Add(Hash(3), Unit(90));                              // クエリの埋め込み中に、埋め込みの進みで足された
         gate.SetResult(Unit(0));
@@ -174,7 +174,7 @@ public sealed class VisualPathTests
         VectorTable table = ReadyTable((1, 0), (2, 90), (3, 180));
         table.Add(Hash(1), Unit(60));                              // 再埋め込みで値が変わった(古い行は無効)
         table.Add(Hash(3), Unit(120));
-        var path = new VisualPath(table, Fixed(Unit(0)));
+        var path = new VisualPath(table, Fixed(Unit(0)), null);
         PathSearchResult r = await path.SearchAsync("q", TestContext.Current.CancellationToken);
 
         Assert.Equal(3, r.Hashes.Count);                           // 件数は増えない
@@ -195,6 +195,6 @@ public sealed class VisualPathTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new VisualPath(table, (_, ct) => Task.FromCanceled<float[]>(ct)).SearchAsync("q", cts.Token));
+            new VisualPath(table, (_, ct) => Task.FromCanceled<float[]>(ct), null).SearchAsync("q", cts.Token));
     }
 }

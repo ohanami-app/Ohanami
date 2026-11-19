@@ -281,7 +281,7 @@ public sealed class DetailPresenterTests
         (string Line, string? Tip) c = DetailPresenter.RankEntries(corrected, correctedPaths)[1];
         Assert.Equal($"{TestWords.VisualWithModel}: 3 位 (類似度 0.0500)", c.Line);
         Assert.DoesNotContain("0.2100", c.Line, StringComparison.Ordinal);
-        Assert.Contains("どの言葉にも近い画像の分を引いた値", c.Tip, StringComparison.Ordinal);
+        Assert.StartsWith("コサイン類似度 (検索の言葉と、画像の見た目の近さ) から、どの言葉にも近い画像の分を引いた値です。", c.Tip, StringComparison.Ordinal);
         Assert.Contains("割合ではありません", c.Tip, StringComparison.Ordinal);
         Assert.Contains("同じ検索の中", c.Tip, StringComparison.Ordinal);
 

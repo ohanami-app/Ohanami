@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Ohanami.Core;
+using Ohanami.Core.Search;
 
 namespace Ohanami.Bench;
 
@@ -98,7 +99,7 @@ internal static class ScoreReport
     private static bool IsTarget(ScoreRow r, string set) => r.Targets.Split('|', StringSplitOptions.RemoveEmptyEntries).Contains(set, StringComparer.Ordinal);
 
     /// <summary>
-    /// 経路の cosine(スコア)の母集団。(クエリ, 画像) の組ごとに 1 件。
+    /// 経路のスコアの母集団。(クエリ, 画像) の組ごとに 1 件。
     /// 当たり / 外れ = qrels の判定、「上位 10」= その経路の上位 10 件に入っていたもの
     /// (ADR 0034 の線の置き方が使う母集団: 守る集合は「当たり・上位 10」、除く効き目を測る母集団は「外れ・上位 10」)。
     /// </summary>
@@ -135,7 +136,11 @@ internal static class ScoreReport
 
     // ------------------------------------------------------------------ 文章
 
-    /// <summary>run の summary に付ける、スコアの要約(経路ごと。見た目の経路は cosine のヒストグラムつき)。行が無ければ空の文字列。</summary>
+    /// <summary>
+    /// run の summary に付ける、スコアの要約(経路ごと。見た目の経路は点のヒストグラムつき)。行が無ければ空の文字列。
+    /// 見た目の経路の点は、順位を決めた点(ADR 0051)。補正をかけた検索語(<see cref="HubnessGate.InScope"/>。製品と同じ関門)では cosine − μ·r、かけない検索語では cosine で、
+    /// 水準が違うので、2 つの群に分けて出す。
+    /// </summary>
     public static string Render(IReadOnlyList<ScoreRow> rows)
     {
         if (rows.Count == 0) return "";
@@ -143,24 +148,20 @@ internal static class ScoreReport
         int pairs = rows.Count(x => x.Path == Metrics.Fused);
         sb.AppendLine($"[経路ごとのスコア(scores.tsv): qrels の判定済みの組と known-item の目的の画像、延べ {pairs} 組。各行は 件数 / 最小 / 10% / 25% / 中央値 / 75% / 90% / 最大]");
 
-        // ---- 見た目の経路の cosine
+        // ---- 見た目の経路の点(補正をかけた検索語とかけない検索語は、水準が違うので分ける)
         if (Of(rows, VisualPath).Any())
         {
-            sb.AppendLine("  見た目の経路の cosine(全画像に値がある。クエリが違っても同じ尺度として並べる)");
-            var pops = Populations(rows, VisualPath);
-            foreach ((string label, List<double> values) in pops) sb.AppendLine(DistributionLine(label, values, "F4"));
-            List<double> top1 = QueryTop1(rows, VisualPath);
-            sb.AppendLine(DistributionLine($"各クエリの 1 位の cosine({top1.Count} クエリ)", top1, "F4"));
-            sb.AppendLine(DistributionLine("1 位との差: known-item の目的(見た目)", TargetGapToTop1(rows, VisualPath, "visual"), "F4"));
-            sb.AppendLine(DistributionLine("1 位との差: known-item の目的(セリフ)", TargetGapToTop1(rows, VisualPath, "dialogue"), "F4"));
-            foreach (string set in BenchInputs.OptionalSets.Where(set => rows.Any(x => IsTarget(x, set))))
-                sb.AppendLine(DistributionLine($"1 位との差: known-item の目的({set})", TargetGapToTop1(rows, VisualPath, set), "F4"));
-            int top1Targets = TargetGapToTop1(rows, VisualPath).Count(g => g <= 0);
-            sb.AppendLine($"    目的の画像が見た目の経路の 1 位だった数: {top1Targets}");
-            sb.AppendLine();
-            List<(string Label, List<double> Values)> shown = pops.Where(p => p.Label is "判定が当たり" or "判定が外れ" or "当たりで、この経路の上位10" or "外れで、この経路の上位10").ToList();
-            shown.Add(("known-item の目的(全集合)", pops.Where(p => p.Label.StartsWith("known-item", StringComparison.Ordinal)).SelectMany(p => p.Values).ToList()));
-            sb.Append(Histograms(shown));
+            sb.AppendLine("  見た目の経路の点(全画像に値がある。順位を決めた点。補正をかけた検索語とかけない検索語で水準が違うので、2 つの群に分け、同じ群の中でだけ並べる)");
+            foreach (bool corrected in new[] { true, false })
+            {
+                List<ScoreRow> group = [.. rows.Where(r => r.Path != VisualPath || HubnessGate.InScope(r.Query) == corrected)];
+                if (!Of(group, VisualPath).Any()) continue;
+                int queries = Of(group, VisualPath).Select(r => r.Query).Distinct(StringComparer.Ordinal).Count();
+                sb.AppendLine(corrected
+                    ? $"  [補正をかけた検索語: 日本語の文字を含む {HubnessGate.MaxCodePoints} 文字以下。点 = cosine − μ·r。{queries} クエリ]"
+                    : $"  [補正をかけない検索語: 点 = cosine。{queries} クエリ]");
+                RenderVisualGroup(sb, group);
+            }
         }
 
         // ---- 全文の経路(スコアは BM25 で、クエリごとに尺度が違う。プールした分布は目安。入っていた数が主)
@@ -183,6 +184,25 @@ internal static class ScoreReport
             sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    /// <summary>見た目の経路の点の要約(1 つの群の分)。</summary>
+    private static void RenderVisualGroup(StringBuilder sb, IReadOnlyList<ScoreRow> rows)
+    {
+        var pops = Populations(rows, VisualPath);
+        foreach ((string label, List<double> values) in pops) sb.AppendLine(DistributionLine(label, values, "F4"));
+        List<double> top1 = QueryTop1(rows, VisualPath);
+        sb.AppendLine(DistributionLine($"各クエリの 1 位の点({top1.Count} クエリ)", top1, "F4"));
+        sb.AppendLine(DistributionLine("1 位との差: known-item の目的(見た目)", TargetGapToTop1(rows, VisualPath, "visual"), "F4"));
+        sb.AppendLine(DistributionLine("1 位との差: known-item の目的(セリフ)", TargetGapToTop1(rows, VisualPath, "dialogue"), "F4"));
+        foreach (string set in BenchInputs.OptionalSets.Where(set => rows.Any(x => IsTarget(x, set))))
+            sb.AppendLine(DistributionLine($"1 位との差: known-item の目的({set})", TargetGapToTop1(rows, VisualPath, set), "F4"));
+        int top1Targets = TargetGapToTop1(rows, VisualPath).Count(g => g <= 0);
+        sb.AppendLine($"    目的の画像が見た目の経路の 1 位だった数: {top1Targets}");
+        sb.AppendLine();
+        List<(string Label, List<double> Values)> shown = pops.Where(p => p.Label is "判定が当たり" or "判定が外れ" or "当たりで、この経路の上位10" or "外れで、この経路の上位10").ToList();
+        shown.Add(("known-item の目的(全集合)", pops.Where(p => p.Label.StartsWith("known-item", StringComparison.Ordinal)).SelectMany(p => p.Values).ToList()));
+        sb.Append(Histograms(shown));
     }
 
     private static string DistributionLine(string label, IReadOnlyCollection<double> values, string format)
@@ -220,7 +240,7 @@ internal static class ScoreReport
         if (every.Count == 0) return "";
         (double width, double start, int bins) = BinLayout(every.Min(), every.Max());
         var sb = new StringBuilder();
-        sb.AppendLine($"  見た目の経路の cosine のヒストグラム(区間の幅 {width.ToString("0.###", CultureInfo.InvariantCulture)}。区間は [下端, 上端)。棒の長さは母集団ごとの最大が {BarWidth} 文字)");
+        sb.AppendLine($"  見た目の経路の点のヒストグラム(区間の幅 {width.ToString("0.###", CultureInfo.InvariantCulture)}。区間は [下端, 上端)。棒の長さは母集団ごとの最大が {BarWidth} 文字)");
         foreach ((string label, List<double> values) in pops)
         {
             sb.AppendLine($"    {label}(n={values.Count})");

@@ -210,7 +210,7 @@ internal static class DetailPresenter
     internal static string? SimilarityTip(PathHit hit, bool corrected) =>
         hit.Detail is VisualDetail
             ? (corrected
-                ? "コサイン類似度から、どの言葉にも近い画像の分を引いた値です (検索の言葉と、画像の見た目の近さ)。"
+                ? "コサイン類似度 (検索の言葉と、画像の見た目の近さ) から、どの言葉にも近い画像の分を引いた値です。"
                 : "コサイン類似度 (検索の言葉と、画像の見た目の近さ) です。")
                 + "大きいほど近いことを表しますが、割合ではありません。同じ検索の中の並び順にだけ使えます。数字だけでは、合っているかどうかは決まりません"
             : null;

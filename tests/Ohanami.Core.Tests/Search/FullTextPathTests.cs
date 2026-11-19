@@ -152,7 +152,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
         foreach ((int image, double angle) in vectors) await AddVectorAsync(_fx.Db, embeddingModel, Hash(image), Unit(angle));
         var table = new VectorTable(embeddingModel, Dim);
         await table.LoadAsync(_fx.Db, Ct);
-        var visual = new VisualPath(table, (_, _) => Task.FromResult(Unit(0)));
+        var visual = new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null);
         return (new SearchService(_fx.Db, [visual, new FullTextPath(_fx.Db, _fx.Index)], table), table);
     }
 
@@ -239,7 +239,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
         await AddVectorAsync(_fx.Db, model, Hash(2), Unit(20));
         var table = new VectorTable(model, Dim);
         await table.LoadAsync(_fx.Db, Ct);
-        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0))), new FullTextPath(_fx.Db, unchecked1)], table);
+        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null), new FullTextPath(_fx.Db, unchecked1)], table);
 
         SearchResponse r = await service.SearchAsync(new SearchQuery("セリフ"), Ct);
 
@@ -298,7 +298,7 @@ public sealed class FullTextPathTests(ITestOutputHelper output) : IDisposable
         await AddVectorAsync(_fx.Db, model, Hash(1), Unit(10));
         var table = new VectorTable(model, Dim);
         await table.LoadAsync(_fx.Db, Ct);
-        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0))), new FullTextPath(_fx.Db, broken)], table);
+        var service = new SearchService(_fx.Db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null), new FullTextPath(_fx.Db, broken)], table);
 
         SearchResponse r = await service.SearchAsync(new SearchQuery("セリフ"), Ct);
 

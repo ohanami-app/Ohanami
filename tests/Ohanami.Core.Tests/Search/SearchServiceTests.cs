@@ -31,7 +31,7 @@ public sealed class SearchServiceTests(ITestOutputHelper output)
         }
         var table = new VectorTable(model, Dim);
         await table.LoadAsync(db, Ct);
-        var path = new VisualPath(table, (text, _) => Task.FromResult((embed ?? (_ => Unit(0)))(text)));
+        var path = new VisualPath(table, (text, _) => Task.FromResult((embed ?? (_ => Unit(0)))(text)), null);
         return (dir, db, new SearchService(db, [path], table), table);
     }
 
@@ -190,7 +190,7 @@ public sealed class SearchServiceTests(ITestOutputHelper output)
             await AddImageAsync(db, folder, Hash(1), [@"C:\a.png"]);
             var table = new VectorTable("m", Dim);
             table.BeginLoading();
-            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)))], table);
+            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null)], table);
             SearchResponse r = await service.SearchAsync(new SearchQuery("q"), Ct);
             Assert.Empty(r.Results);
             PathOutcome o = Assert.Single(r.Paths);
@@ -278,7 +278,7 @@ public sealed class SearchServiceTests(ITestOutputHelper output)
             await AddVectorAsync(db, model, Hash(5), Unit(40));
             var table = new VectorTable(model, Dim);
             await table.LoadAsync(db, Ct);
-            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)))], table);
+            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null)], table);
 
             SearchResponse r = await service.SearchAsync(new SearchQuery("q"), Ct);
 
@@ -306,7 +306,7 @@ public sealed class SearchServiceTests(ITestOutputHelper output)
             await AddVectorAsync(db, model, Hash(2), Unit(20));
             var table = new VectorTable(model, Dim);
             await table.LoadAsync(db, Ct);
-            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)))], table);
+            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null)], table);
 
             SearchResponse r = await service.SearchAsync(new SearchQuery("q"), Ct);
             Assert.Equal(4, r.TotalImages);
@@ -333,7 +333,7 @@ public sealed class SearchServiceTests(ITestOutputHelper output)
             await AddVectorAsync(db, model, Hash(1), Unit(10));
             var table = new VectorTable(model, Dim);
             await table.LoadAsync(db, Ct);
-            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)))], table);
+            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(Unit(0)), null)], table);
             Assert.Equal(2, (await service.SearchAsync(new SearchQuery("q"), Ct)).Results[0].Paths.Count);
 
             await db.WriteAsync((conn, tx) =>
@@ -408,7 +408,7 @@ public sealed class SearchServiceTests(ITestOutputHelper output)
             table.EndLoading();
             float[] q = new float[D];
             q[0] = 1;
-            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(q))], table);
+            var service = new SearchService(db, [new VisualPath(table, (_, _) => Task.FromResult(q), null)], table);
 
             await service.SearchAsync(new SearchQuery("warmup"), Ct);
             var times = new List<double>();
