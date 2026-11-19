@@ -88,7 +88,7 @@ dotnet run --project tools/Ohanami.Bench -- check-s2 --s2 spikes/S2-siglip2/resu
 製品の検索は、日本語の文字を含み 8 文字以下の検索語で、特徴ベクトル検索の点から μ·r(r は画像のベクトル)を引く。μ は、参照の語の一覧(`hubness-reference-ja.txt`)のテキスト埋め込みの平均で、Core の生成ソース(`src/Ohanami.Core/Embedding/Generated/HubnessReferenceMean.g.cs`)に入っている。
 
 ```
-# models/ が要る(テキスト側のモデルを CPU で動かす。DB・GPU・画像は使わない。411 語で約 80 秒)
+# models/ が要る(テキスト側のモデルを CPU で動かす。DB・GPU・画像は使わない。411 語の埋め込みで約 81 秒。実行の内訳を出力する)
 dotnet run --project tools/Ohanami.Bench -- hubness-mean [--reference <一覧>] [--models <dir>] [--out <生成する .g.cs>]
 ```
 

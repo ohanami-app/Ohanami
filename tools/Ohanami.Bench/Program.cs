@@ -160,7 +160,7 @@ internal static class Program
         string referencePath = Path.GetFullPath(flags.GetValueOrDefault("--reference") ?? HubnessMean.FindInRepository(Path.Combine("tools", "Ohanami.Bench", HubnessMean.ReferenceFileName)));
         string outPath = Path.GetFullPath(flags.GetValueOrDefault("--out") ?? HubnessMean.FindInRepository(HubnessMean.GeneratedRelativePath));
         (IReadOnlyList<string> words, string sha) = HubnessMean.ReadReference(referencePath);
-        float[] mean = HubnessMean.ComputeMean(models, words);
+        float[] mean = HubnessMean.ComputeMean(models, words, Console.WriteLine);
         string modelId = Ohanami.Core.Models.ModelCatalog.Current.ModelId;
         File.WriteAllText(outPath, HubnessMean.RenderSource(modelId, sha, words.Count, mean), new System.Text.UTF8Encoding(false));
         Console.WriteLine($"μ を書いた: {outPath}");

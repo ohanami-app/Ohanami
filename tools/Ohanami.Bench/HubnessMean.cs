@@ -76,20 +76,27 @@ internal static class HubnessMean
         return mean;
     }
 
-    /// <summary>参照の語を、製品と同じテキスト埋め込み(CPU)でベクトルにして、平均 μ を返す。</summary>
-    public static float[] ComputeMean(string modelsDirectory, IReadOnlyList<string> words)
+    /// <summary>
+    /// 参照の語を、製品と同じテキスト埋め込み(CPU)でベクトルにして、平均 μ を返す。
+    /// <paramref name="report"/> があれば、テキスト側の読み込みと、語の埋め込みにかかった秒数を 1 行ずつ渡す(埋め込みだけの時間を見るため)。
+    /// </summary>
+    public static float[] ComputeMean(string modelsDirectory, IReadOnlyList<string> words, Action<string>? report = null)
     {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         EmbeddingModelSpec spec = ModelCatalog.Current;
         string modelDir = Path.Combine(modelsDirectory, BenchRunner.ModelDirectoryName);
         var vectors = new List<float[]>(words.Count);
         using Siglip2TextEncoder encoder = Siglip2TextEncoder.Create(modelDir, spec);
         Siglip2Tokenizer tokenizer = Siglip2Tokenizer.Load(ModelVerifier.PathOf(modelDir, spec.File(ModelRole.Tokenizer)));
+        report?.Invoke(string.Create(CultureInfo.InvariantCulture, $"  テキスト側の読み込み {clock.Elapsed.TotalSeconds:F1} 秒"));
+        clock.Restart();
         foreach (string w in words)
         {
             float[] v = encoder.EmbedQuery(w, tokenizer);
             if (v.Length != spec.Dim || v.Any(x => !float.IsFinite(x))) throw new InvalidDataException("参照の語のベクトルが壊れている(次元か有限でない値)");
             vectors.Add(v);
         }
+        report?.Invoke(string.Create(CultureInfo.InvariantCulture, $"  {words.Count} 語の埋め込み {clock.Elapsed.TotalSeconds:F1} 秒"));
         return Mean(vectors);
     }
 
