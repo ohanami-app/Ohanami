@@ -101,6 +101,7 @@ Ohanami のコードの一部は、次の第三者のソフトウェアのコー
 - 原作: SigLIP 2 So400m/16(384 px、多言語)。作者は Google(SigLIP 2 / big_vision)。
 - 変換: 元の重みを、Ohanami の作者が ONNX に変換した(2 つのグラフ。バッチは 1。出力は L2 正規化)。重みは、再学習も量子化もしていない。変換の手順は、Ohanami のリポジトリの `tools/convert-siglip2` にある。元の作者の承認や推薦を、意味しない。
 - ライセンス: Hugging Face のモデルの札(`timm/ViT-SO400M-16-SigLIP2-384`)は Apache License 2.0。作者の SigLIP 2 の説明(big_vision の `README_siglip2.md`)は、ソフトウェアを Apache 2.0、そのほかの素材を CC BY 4.0(https://creativecommons.org/licenses/by/4.0/legalcode)としている。どちらが重みに当たるかは、公開された資料からは決められないので、両方の表示をつける。Apache License 2.0 の全文は [Apache-2.0.txt](licenses/Apache-2.0.txt)。
+- 計算した値: Ohanami のソースは、SigLIP2 で計算した値を含む(参照の語の埋め込みの平均。`HubnessReferenceMean.g.cs`。ADR 0051)。この値にも、上の帰属が及ぶ。
 - 出典: Tschannen et al., "SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features", arXiv:2502.14786(2025)。Zhai et al., "Sigmoid Loss for Language Image Pre-Training", arXiv:2303.15343(2023)。コード: https://github.com/google-research/big_vision
 
 ## 6. 試験に使った第三者のソフトウェア

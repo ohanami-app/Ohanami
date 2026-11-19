@@ -46,7 +46,7 @@ dotnet test --project tests/Ohanami.Core.Tests --filter-trait "Category=Private"
 | Trait `Category` | 内容 | 要るもの |
 |---|---|---|
 | (なし) | 通常のテスト。合成したデータで、仕組みが正しく動くかを見る(検索の精度は測らない) | `tokenizer.json`(上。無ければ**失敗**する。skip しない) |
-| `Model` | モデルの実物(4.58GB)のハッシュ検証と、CPU での埋め込みが Python の参照と一致すること | `models/ViT-SO400M-16-SigLIP2-384__ohanami/` の 4 ファイル一式(下) |
+| `Model` | モデルの実物(4.58GB)のハッシュ検証と、CPU での埋め込みが Python の参照と一致すること、補正の μ(ADR 0051)を参照の語の一覧から作り直した値が、生成ソースと合うこと | `models/ViT-SO400M-16-SigLIP2-384__ohanami/` の 4 ファイル一式(下) |
 | `Gpu` | 画像エンコーダ(GPU)の作成・自己検査・参照との一致・Dispose 後の VRAM、実物の llama-server の起動 | 下の環境変数と、空いている NVIDIA GPU。実物のモデル(Qwen3-VL。下) |
 | `Private` | 手元の画像(私物。コミットしない)での前処理の補助確認 | 環境変数 `OHANAMI_PRIVATE_IMAGES`、`OHANAMI_PRIVATE_HASHES`。無ければ skip |
 
