@@ -18,7 +18,7 @@ public sealed class ReasonTests
 {
     private static string H(char c) => new(c, 64);
 
-    private static PathHit Visual(double rank = 3, double cosine = 0.21) => new("visual", "m", rank, cosine, new VisualDetail(cosine));
+    private static PathHit Visual(double rank = 3, double cosine = 0.21) => new("visual", "m", rank, cosine, new VisualDetail(cosine, cosine));
 
     private static PathHit Text(TextDetail detail, double rank = 1) => new("fulltext", null, rank, 5.5, detail);
 

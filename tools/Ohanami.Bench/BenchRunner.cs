@@ -161,7 +161,7 @@ internal static class BenchRunner
             IReadOnlyDictionary<string, string> targets = targetSets.TryGetValue(q, out Dictionary<string, string>? t) ? t : new Dictionary<string, string>();
             scores.AddRange(Metrics.ScoreRows(q, c.Responses[q], c.ByName[q], judgedFiles[q].Concat(targets.Keys), targets, qrels));
         }
-        return new RunData(known, precision, scores);
+        return new RunData(known, precision, scores, RepeatMetrics.TopRows(c));
     }
 
     /// <summary>ベンチの DB で Core を開き、起動が済む(Ready)のを待つ。DB・サムネイルは <see cref="RunOptions.Root"/> の下(リポジトリの外)。</summary>

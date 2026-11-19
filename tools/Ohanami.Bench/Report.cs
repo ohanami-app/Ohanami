@@ -16,7 +16,7 @@ internal static class Report
     /// 経路ごとの known-item と precision@10 の要約。評価の記録(spikes/S2-siglip2 の出力。SigLIP2 単独 22/45、0.346)は、確認のための参考値として最後に付ける
     /// (評価の記録は TF32 オンの埋め込み。製品は TF32 オフなので、数件の順位のずれはありうる)。
     /// </summary>
-    public static string Summary(RunInfo info, RunData data, IReadOnlyList<string> pathNames, int precisionQueries)
+    public static string Summary(RunInfo info, RunData data, IReadOnlyList<string> pathNames, int precisionQueries, IReadOnlyList<string>? breakdownPaths = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Ohanami 検索の回帰ベンチ  {info.Label}  {info.At.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
@@ -24,6 +24,7 @@ internal static class Report
         if (info.IndexSeconds > 0) sb.AppendLine($"今回の走査と埋め込み: {info.IndexSeconds:F1} 秒");
         if (info.Notes.Length > 0) sb.AppendLine(info.Notes);
         sb.AppendLine($"経路: {string.Join("、", pathNames)}(fused = 融合の後)");
+        sb.AppendLine(HubnessMean.SourceLine());
         sb.AppendLine();
 
         sb.AppendLine("[known-item: 探したい 1 枚の順位(同点は平均順位)。上位20位以内 / 5位以内 / 1位 / 中央値]");
@@ -38,12 +39,12 @@ internal static class Report
         }
         sb.AppendLine();
 
-        sb.AppendLine($"[precision@10: qrels の {precisionQueries} クエリ。未判定は外れとして数える(下限)。上限は未判定がすべて当たりのとき]");
+        sb.AppendLine($"[precision@10: qrels の {precisionQueries} クエリ。2 つの値を並べる: 未判定を外れとして数えた値(下限。上限は未判定がすべて当たりのとき)と、判定済みの枠だけで数えた値。どちらかとは決めない]");
         foreach (string path in pathNames)
         {
             PrecisionSummary s = Metrics.Summarize(path, data.Precision);
             if (s.Queries == 0) continue;
-            sb.AppendLine($"  {path,-8} 下限 {s.Lower:F3}  上限 {s.Upper:F3}  当たり {s.Relevant}  判定済みの外れ {s.JudgedMiss}  未判定 {s.Unjudged}  返した件数 {s.Returned}/{s.Slots}");
+            sb.AppendLine($"  {path,-8} 未判定を外れ {s.Lower:F3}  上限 {s.Upper:F3}  判定済みの枠だけ {Percent(s.JudgedOnly)}({s.Relevant}/{s.JudgedSlots})  当たり {s.Relevant}  判定済みの外れ {s.JudgedMiss}  未判定 {s.Unjudged}  返した件数 {s.Returned}/{s.Slots}");
         }
         sb.AppendLine();
 
@@ -58,6 +59,7 @@ internal static class Report
         }
         sb.AppendLine();
 
+        if (data.Tops is { Count: > 0 } tops) sb.AppendLine(RepeatMetrics.Render(tops, pathNames, breakdownPaths ?? [Metrics.Fused]));
         if (data.Scores is { Count: > 0 } scores) sb.Append(ScoreReport.Render(scores));
         sb.Append(ScoreReport.RenderTimings(info.Stages));
 

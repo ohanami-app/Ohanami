@@ -17,7 +17,7 @@ dotnet run --project tools/Ohanami.Bench -- compare                     # 基準
 ```
 
 - DB・サムネイル・結果は `%LOCALAPPDATA%\Ohanami\bench\`(`--root` で変更。リポジトリの中は拒否する)。結果は `runs/<時刻>-<label>/`、基準線は `baseline/`。
-- 結果は `summary.txt`(要約)、`known-items.tsv`、`precision.tsv`(クエリ × 経路ごとの表)、`scores.tsv`(経路ごとのスコア。下の「スコアと所要時間」)。経路は行の値なので、経路が増えても列は変わらず行が増える。
+- 結果は `summary.txt`(要約)、`known-items.tsv`、`precision.tsv`(クエリ × 経路ごとの表)、`scores.tsv`(経路ごとのスコア。下の「スコアと所要時間」)、`top10.tsv`(上位 10 件の枠ごとの表。下の「繰り返し出る画像」)。経路は行の値なので、経路が増えても列は変わらず行が増える。
 - 入力は `spikes/S2-siglip2/`(評価の記録)の `known-items.tsv`(見た目 45 件)、`known-items-dialogue.tsv`(セリフ 10 件)、`qrels.tsv`。
   任意の `known-items-one-image.tsv`(集合 `one-image`。形式は known-items.tsv と同じ: UTF-8、タブ区切り、filename / query_ja / query_en。query_en は空でよい)も読む。**無ければ**測らない。
   あるのに形式が違えば例外(「無い」と「壊れている」を区別する)。評価の記録の 2 つのファイルには手を加えず、`check-s2` と見た目・セリフの集計は変わらない。summary には one-image を別の集合として出し、scores.tsv の `targets` にも `one-image` が入る。
@@ -54,7 +54,7 @@ dotnet run --project tools/Ohanami.Bench -- check-s2 --s2 spikes/S2-siglip2/resu
 
 ## スコアと所要時間
 
-検索の調整の判断材料(ADR 0034 の線の置き方など)。**Core の検索は変えず**、製品の `SearchResponse` が持つ経路ごとのスコア(`PathHit.Score`。見た目は cosine、全文は `-rank` = BM25 の符号反転)を、そのまま書き出す。
+検索の調整の判断材料(ADR 0034 の線の置き方など)。製品の `SearchResponse` が持つ経路ごとのスコア(`PathHit.Score`。見た目は、順位を決めた点 = 補正をかけた検索語では cosine − μ·r(ADR 0051)、かけない検索語では cosine。全文は `-rank` = BM25 の符号反転)を、そのまま書き出す。
 
 - `scores.tsv`: 列は query / filename / targets / judged / path / score / rank / top10 / path_top1。1 行 = 1 つの (クエリ, 画像) の 1 つの経路(fused は RRF の合計)。
   対象は、そのクエリの **qrels の画像の全組**と、**そのクエリを使う known-item の目的の画像**。見た目の経路は全画像に cosine が付くので、判定済みの画像はすべて値を持つ。
@@ -70,6 +70,32 @@ dotnet run --project tools/Ohanami.Bench -- check-s2 --s2 spikes/S2-siglip2/resu
   古い形式の基準線(scores.tsv が無い)も読めて、scores.tsv のある新しい run と比べられる(`scores.tsv` があれば読む。無ければ null)。`baseline` は run に scores.tsv があれば基準線にも写す(比較には使わない)。
   scores.tsv があって壊れていれば、黙って無視せず例外にする。
 - 件数が少ない・クエリが違う母集団を「同じ尺度」として並べるのは、cosine が 1 つのモデルの値だから(クエリの型で尺度が動くかは未確認)。分布は形を見るためのもので、線は引かない。
+
+## 繰り返し出る画像(`top10.tsv`)
+
+特徴ベクトル検索では、どのクエリでも上位に来る画像(繰り返し出る画像)がある(ADR 0051)。その量を、`run`・`third-path` の summary に出す。
+
+- `top10.tsv`: 列は query / path / pos / filename / text / judge。1 行 = 1 つのクエリのその経路の上位 10 件の 1 枠(`Metrics.TopOf`。precision@10 と同じ取り方)。
+  `text` はその画像が全文検索にヒットしていたか(1 / 0)、`judge` は qrels の判定(`1` = 当たり、`0` = 外れ、`u` = 未判定、`-` = そのクエリが qrels に無い)。私物のクエリ・ファイル名を含むので、リポジトリの外のままにする。
+  古い run には無い(読むと null)。あって壊れていれば例外。
+- ① 繰り返し(経路ごと。対象は **qrels のある検索語だけ** = precision@10 を測る検索語。known-item だけの検索語は数えない。枠の数 = 検索語の数 × 10(全文は返した分だけ)): 異なる画像の数、「繰り返し画像」(その検索語のうち 5 語以上で上位 10 件に入る画像)の数とその枠の数・割合、1 枚が出る検索語数の最大。summary には、検索語の数と「検索語 × 10」を併記する。比べるために、known-item だけの検索語も含めた全検索語で数えた値(比べる定義)も並べて出す(② の繰り返しの行も同じ)。
+- ② 融合の上位 10 件の当たり率の内訳(**qrels のクエリだけ**。当たり率は 2 つ並べて、どちらかとは決めない: 未判定を外れとして数えた値 = 当たり ÷ 枠、判定済みの枠だけで数えた値 = 当たり ÷(当たり + 判定済みの外れ)): 「全文に一致した枠」(その検索語でテキスト検索の順位がある画像)/ 見た目の経路だけの枠、
+  クエリごとの全文一致の枚数(0 / 1〜9 / 10)、繰り返し画像の枠 / それ以外、全文 × 繰り返しの 4 通り。繰り返しは ① と同じ数え方(qrels のある検索語の中で 5 語以上)で決める。
+- `compare` は、基準線と今回の両方に `top10.tsv` があるときだけ ① ② の前後を出す。順位の比較ではないので、終了コード 3 の判定には入れない。片方にだけあれば、注意を 1 行出す。
+
+## 特徴ベクトル検索の補正の μ(`hubness-mean`。ADR 0051)
+
+製品の検索は、日本語の文字を含み 8 文字以下の検索語で、特徴ベクトル検索の点から μ·r(r は画像のベクトル)を引く。μ は、参照の語の一覧(`hubness-reference-ja.txt`)のテキスト埋め込みの平均で、Core の生成ソース(`src/Ohanami.Core/Embedding/Generated/HubnessReferenceMean.g.cs`)に入っている。
+
+```
+# models/ が要る(テキスト側のモデルを CPU で動かす。DB・GPU・画像は使わない。411 語で約 80 秒)
+dotnet run --project tools/Ohanami.Bench -- hubness-mean [--reference <一覧>] [--models <dir>] [--out <生成する .g.cs>]
+```
+
+- 一覧は、測った 411 語のまま凍結してある。語・順序・空行・コメントのどれを変えても一覧の SHA-256 が変わり、通常のテスト(Core.Tests の `HubnessCorrectionTests`)が「生成物の SHA-256 が一覧と違う」で落ちる。変えたら、このコマンドで μ を作り直す。語を変えたときは、検索の動きが変わるので、変更の前の基準線と比べる(ADR 0037・0051)。
+- 生成ソースには、作ったときの model_id・一覧の SHA-256・語数も入る。モデルを替えたときも、model_id が合わずに製品が起動で例外にする(`VisualPath`)ので、このコマンドで作り直す。
+- 作り直した値と、リポジトリの生成ソースの一致は、`Category=Model` のテスト(`HubnessMeanModelTests`)が確かめる。
+- `run` の summary は、補正の出どころ(一覧の SHA-256・語数・model_id)を 1 行で書く。
 
 ## 3 本目の試し測り(ADR 0035)
 

@@ -315,7 +315,7 @@ public sealed class WordRulesGuardTests
     private static SearchResult Result(PathDetail? fulltext, params string[] hitIds)
     {
         var hits = new List<PathHit>();
-        if (hitIds.Contains("visual")) hits.Add(new PathHit("visual", "m", 3, 0.2, new VisualDetail(0.21)));
+        if (hitIds.Contains("visual")) hits.Add(new PathHit("visual", "m", 3, 0.2, new VisualDetail(0.21, 0.21)));
         if (hitIds.Contains("fulltext") && fulltext is not null) hits.Add(new PathHit("fulltext", null, 1, 5.5, fulltext));
         return new SearchResult(Hash, [@"C:\shots\a.png"], 2, 0.03, hits);
     }

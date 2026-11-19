@@ -187,7 +187,7 @@ public sealed class OhanamiCore : IAsyncDisposable
             Siglip2TextEncoder encoder = await _textEncoder.Task.WaitAsync(ct).ConfigureAwait(false);
             return await VisualPath.TextEncoderEmbedder(encoder, _tokenizer.Task)(text, ct).ConfigureAwait(false);
         };
-        Search = new SearchService(db, [new VisualPath(_vectors, queryEmbedder), new FullTextPath(db, _ftsIndex, options.Log)], _vectors);
+        Search = new SearchService(db, [new VisualPath(_vectors, queryEmbedder, HubnessCorrection.Default), new FullTextPath(db, _ftsIndex, options.Log)], _vectors);
         Thumbnails = new ThumbnailService(db, options.ThumbnailDirectory);
     }
 

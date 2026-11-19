@@ -19,8 +19,8 @@ internal static class Fx
         var results = items.OrderBy(i => i.Fused).Select(i =>
         {
             var hits = new List<PathHit>();
-            if (i.Visual is { } v) hits.Add(new PathHit("visual", "m", v, 1.0 / v, new VisualDetail(1.0 / v)));
-            if (i.Fulltext is { } f) hits.Add(new PathHit("fulltext", null, f, 1.0 / f, new VisualDetail(0)));
+            if (i.Visual is { } v) hits.Add(new PathHit("visual", "m", v, 1.0 / v, new VisualDetail(1.0 / v, 1.0 / v)));
+            if (i.Fulltext is { } f) hits.Add(new PathHit("fulltext", null, f, 1.0 / f, new VisualDetail(0, 0)));
             return new SearchResult(Hash(i.File), [@"C:\images\" + i.File], i.Fused, 1.0 / i.Fused, hits);
         }).ToList();
         var paths = new List<PathOutcome> { new("visual", "m", items.Count(i => i.Visual is not null), PathState.Ok, null) };

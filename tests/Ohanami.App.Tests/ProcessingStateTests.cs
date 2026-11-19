@@ -618,7 +618,7 @@ public sealed class ProcessingStateTests
             ImageFunc = (_, _) => Task.FromResult(Pixels()),
             DisplayZone = TimeZoneInfo.Utc,
         };
-        SearchResult a = new(H('a'), [@"C:\no-such-dir\a.png"], 1, 0.01, [new PathHit("visual", "m", 1, 0.1, new VisualDetail(0.2))]);
+        SearchResult a = new(H('a'), [@"C:\no-such-dir\a.png"], 1, 0.01, [new PathHit("visual", "m", 1, 0.1, new VisualDetail(0.2, 0.2))]);
         panel.SetResults([a]);
         return (panel, notices);
     }

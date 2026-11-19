@@ -28,6 +28,15 @@ internal sealed class Comparison
     public required IReadOnlyList<(KnownItemSummary Before, KnownItemSummary After)> KnownItemSummaries { get; init; }
     public required IReadOnlyList<(PrecisionSummary Before, PrecisionSummary After)> PrecisionSummaries { get; init; }
 
+    /// <summary>
+    /// 繰り返し出る画像(<see cref="RepeatMetrics"/>)の、両方にある経路ごとの基準線と今回(両方に top10.tsv があるとき。無ければ空)。順位の比較ではないので、
+    /// <see cref="AggregateWorse"/>(終了コード 3)には入れない。
+    /// </summary>
+    public required IReadOnlyList<(RepeatStats Before, RepeatStats After)> RepeatChanges { get; init; }
+
+    /// <summary>融合の上位 10 件の当たり率の内訳(<see cref="RepeatMetrics.Breakdown"/>)の、基準線と今回(両方に top10.tsv があるとき。無ければ空)。</summary>
+    public required IReadOnlyList<(HitBreakdownRow Before, HitBreakdownRow After)> BreakdownChanges { get; init; }
+
     /// <summary>片方にしかない経路やクエリ(比較から外したもの)。</summary>
     public required IReadOnlyList<string> Skipped { get; init; }
 
@@ -106,8 +115,23 @@ internal sealed class Comparison
                             Metrics.Summarize(path, current.Precision.Where(r => commonQ.Contains((r.Query, r.Path))))));
         }
 
+        // 繰り返し出る画像(top10.tsv が両方にあるときだけ。基準線が古い形式ならここは空で、注意を 1 行出す)
+        var repeats = new List<(RepeatStats, RepeatStats)>();
+        var breakdowns = new List<(HitBreakdownRow, HitBreakdownRow)>();
+        if (baseline.Tops is { } baseTops && current.Tops is { } nowTops)
+        {
+            foreach (string path in nowTops.Select(r => r.Path).Distinct().Where(p => baseTops.Any(r => r.Path == p)))
+                repeats.Add((RepeatMetrics.Repeat(baseTops, path), RepeatMetrics.Repeat(nowTops, path)));
+            if (baseTops.Any(r => r.Path == Metrics.Fused) && nowTops.Any(r => r.Path == Metrics.Fused))
+                breakdowns.AddRange(RepeatMetrics.Breakdown(baseTops, Metrics.Fused).Zip(RepeatMetrics.Breakdown(nowTops, Metrics.Fused)));
+        }
+        else if (baseline.Tops is not null || current.Tops is not null)
+            skipped.Add("繰り返し出る画像: 基準線か今回の片方にだけ top10.tsv がある(比較しない。基準線を取り直すと比べられる)");
+
         return new Comparison
         {
+            RepeatChanges = repeats,
+            BreakdownChanges = breakdowns,
             KnownItemDrops = drops.OrderByDescending(d => d.LeftTop20).ThenByDescending(d => d.Delta).ToList(),
             KnownItemImproved = improved,
             PrecisionDrops = pdrops.OrderBy(d => d.After - d.Before).ThenBy(d => d.Query, StringComparer.Ordinal).ToList(),
@@ -129,9 +153,20 @@ internal sealed class Comparison
         foreach ((KnownItemSummary b, KnownItemSummary a) in KnownItemSummaries)
             sb.AppendLine($"  known-item {SetLabel(b.Set)} / {b.Path}: 上位20位以内 {b.Top20}/{b.Count} → {a.Top20}/{a.Count}{Mark(a.Top20 - b.Top20)}、5位以内 {b.Top5} → {a.Top5}、1位 {b.Top1} → {a.Top1}");
         foreach ((PrecisionSummary b, PrecisionSummary a) in PrecisionSummaries)
-            sb.AppendLine($"  precision@10 / {b.Path}: {b.Lower:F3} → {a.Lower:F3}(当たり {b.Relevant} → {a.Relevant}{Mark(a.Relevant - b.Relevant)}、未判定 {b.Unjudged} → {a.Unjudged})");
+            sb.AppendLine($"  precision@10 / {b.Path}: 未判定を外れ {b.Lower:F3} → {a.Lower:F3}(当たり {b.Relevant} → {a.Relevant}{Mark(a.Relevant - b.Relevant)}、未判定 {b.Unjudged} → {a.Unjudged})、判定済みの枠だけ {RepeatMetrics.Percent(b.JudgedOnly)} → {RepeatMetrics.Percent(a.JudgedOnly)}");
 
-        sb.AppendLine($"[下がった known-item: {KnownItemDrops.Count} 件(20位の線の外へ落ちたもの {KnownItemDrops.Count(d => d.LeftTop20)} 件)]");
+        if (RepeatChanges.Count > 0)
+        {
+            sb.AppendLine($"[繰り返し出る画像(基準線 → 今回。qrels のクエリの上位 10 件。繰り返し画像 = {RepeatMetrics.RepeatThreshold} クエリ以上に出た画像)]");
+            foreach ((RepeatStats b, RepeatStats a) in RepeatChanges)
+                sb.AppendLine($"  {b.Path,-8} 画像の種類 {b.DistinctImages} → {a.DistinctImages}、繰り返し画像 {b.RepeatImages} → {a.RepeatImages} 枚、その枠 {b.RepeatSlots} → {a.RepeatSlots}"
+                    + $"({RepeatMetrics.Percent(b.RepeatRatio)} → {RepeatMetrics.Percent(a.RepeatRatio)})、最大 {b.MaxQueriesPerImage} → {a.MaxQueriesPerImage}");
+            sb.AppendLine("[融合の上位 10 件の当たり率の内訳(基準線 → 今回。qrels のクエリだけ。当たり率は、未判定を外れとした値 → 今回 / 判定済みの枠だけの値 → 今回。どちらかとは決めない)]");
+            foreach ((HitBreakdownRow b, HitBreakdownRow a) in BreakdownChanges)
+                sb.AppendLine($"  {b.Label,-22} 枠 {b.Slots} → {a.Slots}、当たり {b.Relevant} → {a.Relevant}、当たり率 未判定を外れ {RepeatMetrics.Percent(b.Lower)} → {RepeatMetrics.Percent(a.Lower)}、判定済みだけ {RepeatMetrics.Percent(b.JudgedOnly)} → {RepeatMetrics.Percent(a.JudgedOnly)}");
+        }
+
+        sb.AppendLine($"[下がった known-item:{KnownItemDrops.Count} 件(20位の線の外へ落ちたもの {KnownItemDrops.Count(d => d.LeftTop20)} 件)]");
         foreach (KnownItemDrop d in KnownItemDrops)
             sb.AppendLine($"  {(d.LeftTop20 ? "圏外へ " : "下がった")} {SetLabel(d.Set)} / {d.Path} / 「{d.Query}」 {d.Filename}: {Rank(d.Before)} → {Rank(d.After)}");
         sb.AppendLine($"[上がった known-item: {KnownItemImproved.Count} 件]");

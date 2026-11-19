@@ -35,6 +35,12 @@ internal sealed record PrecisionSummary(string Path, int Queries, int Relevant, 
 
     /// <summary>未判定がすべて当たりだったときの、返した分の当たり率(上限)。何も返していなければ NaN。</summary>
     public double HitRateUpper => Returned == 0 ? double.NaN : (double)(Relevant + Unjudged) / Returned;
+
+    /// <summary>判定済みの枠の数(当たり + 判定済みの外れ)。</summary>
+    public int JudgedSlots => Relevant + JudgedMiss;
+
+    /// <summary>判定済みの枠だけで数えた当たり率(未判定の枠は分母にも入れない)。判定済みの枠が無ければ NaN。<see cref="Lower"/>(未判定は外れ)と並べて見る。</summary>
+    public double JudgedOnly => JudgedSlots == 0 ? double.NaN : (double)Relevant / JudgedSlots;
 }
 
 /// <summary>
@@ -117,16 +123,26 @@ internal static class Metrics
         var names = new List<string>();
         foreach (SearchResult r in top)
         {
-            string[] files = r.Paths.Select(FileName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
-            if (files.Length == 0) throw new InvalidDataException("パスの無い結果がある(missing_since の画像は結果に入らないはず)");
-            names.Add(files[0]);
-            bool[] judged = files.Select(f => qrels.TryGet(query, f)).Where(j => j is not null).Select(j => j!.Value).Distinct().ToArray();
-            if (judged.Length > 1) throw new InvalidDataException($"同じ画像の別名で qrels の判定が食い違う(クエリ「{query}」: {string.Join("、", files)})");
-            if (judged.Length == 0) unj++;
-            else if (judged[0]) rel++;
+            (string name, bool? judged) = Judge(r, query, qrels);
+            names.Add(name);
+            if (judged is null) unj++;
+            else if (judged.Value) rel++;
             else miss++;
         }
         return new PrecisionRow(query, pathId, rel, miss, unj, top.Count, names);
+    }
+
+    /// <summary>
+    /// 1 つの結果(画像)の、そのクエリでの判定。<c>Name</c> は画像を指すファイル名(別名のうち序数順で先頭)、<c>Judged</c> は qrels で当たりなら true・外れなら false・載っていなければ null(未判定)。
+    /// 同じ画像の別名で判定が食い違えば例外。
+    /// </summary>
+    public static (string Name, bool? Judged) Judge(SearchResult r, string query, Qrels qrels)
+    {
+        string[] files = r.Paths.Select(FileName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        if (files.Length == 0) throw new InvalidDataException("パスの無い結果がある(missing_since の画像は結果に入らないはず)");
+        bool[] judged = files.Select(f => qrels.TryGet(query, f)).Where(j => j is not null).Select(j => j!.Value).Distinct().ToArray();
+        if (judged.Length > 1) throw new InvalidDataException($"同じ画像の別名で qrels の判定が食い違う(クエリ「{query}」: {string.Join("、", files)})");
+        return (files[0], judged.Length == 0 ? null : judged[0]);
     }
 
     /// <summary>

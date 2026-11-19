@@ -105,7 +105,7 @@ public sealed class SearchResultTextTests
             new FieldMatch(TextField.Description, "説明", []),
             new FieldMatch(TextField.Tags, "猫、犬", [new TextSpan(0, 1)]),
         ]);
-        var x = new SearchResult("h", ["C:\\a.png"], 2, 0.0161, [new PathHit("visual", "m", 5, 0.2, new VisualDetail(0.2)), new PathHit("fulltext", null, 1.5, 3.25, detail)]);
+        var x = new SearchResult("h", ["C:\\a.png"], 2, 0.0161, [new PathHit("visual", "m", 5, 0.2, new VisualDetail(0.2, 0.2)), new PathHit("fulltext", null, 1.5, 3.25, detail)]);
 
         string text = ResultsPanel.BuildTooltip(x);
 
@@ -119,7 +119,7 @@ public sealed class SearchResultTextTests
     [Fact]
     public void The_tooltip_adds_path_states_and_notes_before_the_file_path_and_stays_unchanged_without_them()
     {
-        var x = new SearchResult("h", ["C:\\a.png"], 2, 0.5, [new PathHit("visual", "m", 5, 0.2, new VisualDetail(0.2))]);
+        var x = new SearchResult("h", ["C:\\a.png"], 2, 0.5, [new PathHit("visual", "m", 5, 0.2, new VisualDetail(0.2, 0.2))]);
         string plain = ResultsPanel.BuildTooltip(x);
         Assert.Equal(plain, ResultsPanel.BuildTooltip(x, []));
         Assert.Equal(plain, ResultsPanel.BuildTooltip(x, [Outcome("visual", PathState.Ok), Outcome("fulltext", PathState.Ok)]));   // 状態が Ok で注意が無いなら何も足さない

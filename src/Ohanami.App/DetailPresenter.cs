@@ -173,7 +173,7 @@ internal static class DetailPresenter
     {
         var entries = new List<(string, string?)> { ("統合: " + Rank(result.Rank), null) };
         var shown = new HashSet<string>(StringComparer.Ordinal);
-        (string, string?) OfHit(PathHit hit) => (ResultsPanel.PathLabel(hit.PathId) + ": " + HitText(hit), SimilarityTip(hit));
+        (string, string?) OfHit(PathHit hit) => (ResultsPanel.PathLabel(hit.PathId) + ": " + HitText(hit), SimilarityTip(hit, ScoreCorrected(paths, hit.PathId)));
         foreach (PathOutcome outcome in paths)
         {
             shown.Add(outcome.PathId);
@@ -197,15 +197,27 @@ internal static class DetailPresenter
     /// <summary>特徴ベクトル検索で順位が無い(この画像の特徴ベクトルがまだ無い)ときの、順位の行の言い方。</summary>
     internal const string NoVisualRank = "この画像のインデックスがまだありません";
 
+    /// <summary>その経路の点に、この検索語で補正をかけたか(<see cref="PathOutcome.ScoreCorrected"/>)。経路の報告が無ければ false。</summary>
+    internal static bool ScoreCorrected(IReadOnlyList<PathOutcome> paths, string pathId) =>
+        paths.FirstOrDefault(p => p.PathId == pathId)?.ScoreCorrected ?? false;
+
     /// <summary>
     /// 特徴ベクトル検索の行のツールチップ(類似度の見方)。類似度の値そのものは行の本文(<see cref="HitText"/>)。特徴ベクトル検索以外は null。
-    /// 「1 に近いほど近い」とは書かない(測った分布では、当たりと外れが 0.1 前後で重なる。ADR 0034)。割合ではないことと、使えるのは同じ検索の中の並び順だけであることを言う。
+    /// 「1 に近いほど近い」とは書かない(測った分布では、当たりと外れが重なる。ADR 0034・0051)。割合ではないことと、使えるのは同じ検索の中の並び順だけであることを言う。
+    /// 値の水準は、補正をかけた検索とかけない検索で違う(ADR 0051)ので、水準の目安(「0.1 前後」など)は書かない。
+    /// <paramref name="corrected"/> のとき(類似度 = 順位を決めた点が、コサインから、どの言葉にも近い画像の分を引いた値のとき)は、そう言う。
     /// </summary>
-    internal static string? SimilarityTip(PathHit hit) =>
-        hit.Detail is VisualDetail ? "コサイン類似度 (検索の言葉と、画像の見た目の近さ) です。大きいほど近いことを表しますが、割合ではありません (上位でも 0.1 前後のことが多いです)。同じ検索の中の並び順にだけ使えます。数字だけでは、合っているかどうかは決まりません" : null;
+    internal static string? SimilarityTip(PathHit hit, bool corrected) =>
+        hit.Detail is VisualDetail
+            ? (corrected
+                ? "コサイン類似度から、どの言葉にも近い画像の分を引いた値です (検索の言葉と、画像の見た目の近さ)。"
+                : "コサイン類似度 (検索の言葉と、画像の見た目の近さ) です。")
+                + "大きいほど近いことを表しますが、割合ではありません。同じ検索の中の並び順にだけ使えます。数字だけでは、合っているかどうかは決まりません"
+            : null;
 
+    /// <summary>順位の行の本文。特徴ベクトル検索は、順位を決めた点(<see cref="VisualDetail.Score"/>。補正をかけた検索では補正後)を類似度として出す。</summary>
     internal static string HitText(PathHit hit) =>
-        Rank(hit.Rank) + (hit.Detail is VisualDetail v ? string.Create(CultureInfo.InvariantCulture, $" (類似度 {v.Cosine:0.0000})") : "");
+        Rank(hit.Rank) + (hit.Detail is VisualDetail v ? string.Create(CultureInfo.InvariantCulture, $" (類似度 {v.Score:0.0000})") : "");
 
     internal static string Rank(double rank) => string.Create(CultureInfo.InvariantCulture, $"{rank:0.#} 位");
 

@@ -19,7 +19,7 @@ public sealed class TagEditingTests
 
     private static SearchResult Result(char c, double rank, TextDetail? text = null)
     {
-        var hits = new List<PathHit> { new("visual", "m", rank, 0.1, new VisualDetail(0.2)) };
+        var hits = new List<PathHit> { new("visual", "m", rank, 0.1, new VisualDetail(0.2, 0.2)) };
         if (text is not null) hits.Add(new PathHit("fulltext", null, rank, 3, text));
         return new SearchResult(H(c), [$@"C:\no-such-dir\{c}.png"], rank, 0.01, hits);
     }

@@ -126,5 +126,5 @@ internal sealed class FakePath : ISearchPath
 
     /// <summary>hashes[i] のスコアが scores[i] の結果(説明は VisualDetail(スコア))。</summary>
     public static FakePath Scored(string id, string[] hashes, double[] scores, string? modelId = "fake-model") =>
-        new(id, modelId, () => PathSearchResult.Ok(hashes, scores, i => new VisualDetail(scores[i])));
+        new(id, modelId, () => PathSearchResult.Ok(hashes, scores, i => new VisualDetail(scores[i], scores[i])));
 }
