@@ -25,6 +25,8 @@
   <!-- テスト(tests/Ohanami.App.Tests)から、internal の部品(AppPaths、FileCoreLog、ThumbnailLoader など)を直接確かめる -->
   <ItemGroup>
     <InternalsVisibleTo Include="Ohanami.App.Tests" />
+    <!-- データ削除の道具のテスト(tests/Ohanami.RemoveData.Tests): 道具が前提にする名前の決め方(SingleInstance.NameFor・AppPaths)を、アプリの実物と突き合わせる -->
+    <InternalsVisibleTo Include="Ohanami.RemoveData.Tests" />
   </ItemGroup>
 
   <!-- CUDA / cuDNN の DLL と VC++ ランタイムの DLL と llama-server の一式を、exe の隣に平らにコピーする(開発のビルドも配布も同じ置き方)。

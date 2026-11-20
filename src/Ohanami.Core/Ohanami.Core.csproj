@@ -16,6 +16,8 @@
     <InternalsVisibleTo Include="Ohanami.Bench.Tests" />
     <!-- 濁点・半濁点の読み取りの尺(tools/Ohanami.KanaYardstick。手元専用): プロンプト・スキーマ・llama-server の引数を、製品と同じものにするために使う -->
     <InternalsVisibleTo Include="Ohanami.KanaYardstick" />
+    <!-- データ削除の道具のテスト(tests/Ohanami.RemoveData.Tests): 実際の書き手(DB・サムネイル・ログ・ダウンロード)で作った根を、道具で消す -->
+    <InternalsVisibleTo Include="Ohanami.RemoveData.Tests" />
   </ItemGroup>
 
   <ItemGroup>

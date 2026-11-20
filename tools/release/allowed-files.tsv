@@ -13,6 +13,8 @@ Microsoft.Win32.Primitives.dll	01e04c9bae28f15661d0da411e959e305ef6d0d78a28eb938
 Microsoft.Win32.Registry.AccessControl.dll	4b1a0ca7289b0fac3c3b2271c136e15c36d99d48a25dd8df838cf61bad4553c6	.NET ランタイム
 Microsoft.Win32.Registry.dll	0d904208ba30d8808a4bbedd8e000bacf1a56417f6f725fc144f81a0c1d6097a	.NET ランタイム
 Microsoft.Win32.SystemEvents.dll	ca7c2be566d070f4e8d61058dbb662c5fa17164b56afef51b2a4b1046629358a	.NET ランタイム
+Ohanami-RemoveData.cmd		repository
+Ohanami-RemoveData.ps1		repository
 Ohanami.App.deps.json		ohanami
 Ohanami.App.dll		ohanami
 Ohanami.App.exe		ohanami

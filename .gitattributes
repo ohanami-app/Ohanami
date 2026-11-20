@@ -6,3 +6,7 @@
 # どの環境で取り出しても同じバイト列(LF)になるよう、行末を固定する。
 tools/convert-siglip2/*.py text eol=lf
 tools/convert-siglip2/requirements.txt text eol=lf
+
+# データ削除の道具の .cmd は、利用者の PC で cmd.exe が読む。LF だけだと行の区切りの読み方が保証されないので、チェックアウトでも CRLF にする。
+# (.ps1 は * の規則どおり LF のまま。BOM は付けたままにする。どちらも Publish-Release.ps1 と tests/Ohanami.RemoveData.Tests が確かめる)
+src/Ohanami.RemoveData/*.cmd text eol=crlf

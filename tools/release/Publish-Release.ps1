@@ -11,6 +11,9 @@
        - 表に SHA-256 が書いてあるファイル(第三者のバイナリ・.NET のランタイム)は、SHA-256 が違えば失敗。
          同梱する第三者のバイナリの SHA-256 は、実行時ではなく、ここで確かめる(llama-server.exe だけは、実行時にも確かめる)。
        - LICENSE・THIRD-PARTY-NOTICES.md・licenses/ の文書(表の出どころは repository)は、リポジトリの同じパスのファイルと、バイト単位で同一でなければ失敗。
+       - データ削除の道具(直下の Ohanami-RemoveData.cmd・Ohanami-RemoveData.ps1。表の出どころは repository)は、リポジトリの src/Ohanami.RemoveData/ の同名のファイルと、バイト単位で同一でなければ失敗。
+         加えて文字コードと改行を確かめる: .ps1 は BOM 付きの UTF-8(先頭が EF BB BF)、.cmd は ASCII だけで、LF の前に必ず CR がある(CRLF)。
+         Windows PowerShell 5.1 は BOM の無い .ps1 を ANSI として読むので、日本語が化ける。LF だけの .cmd は、cmd.exe の読み方が保証されない。違えば zip は作らない。
     3. 出力のすべてのファイルの中に、ビルドした PC のパスが残っていないことを確かめる(下の「パスの検査」)。
     4. zip を作り、2GiB 未満であることを確かめ、zip の SHA-256 を出す(<zip>.sha256 にも書く)。
 
@@ -100,9 +103,15 @@ foreach ($f in Get-ChildItem -LiteralPath $appFull -Recurse -File) {
 }
 Write-Host ("   出力: {0} ファイル、{1:N1} MiB" -f $actual.Count, (($actual.Values | Measure-Object Length -Sum).Sum / 1MB))
 
+# 配布物の直下に置くデータ削除の道具は、リポジトリでは src/Ohanami.RemoveData/ にある(配布物のパス → リポジトリのパス)。ほかの文書は、同じパス
+$repositoryPathOf = @{
+    'Ohanami-RemoveData.cmd' = 'src/Ohanami.RemoveData/Ohanami-RemoveData.cmd'
+    'Ohanami-RemoveData.ps1' = 'src/Ohanami.RemoveData/Ohanami-RemoveData.ps1'
+}
+
 function Get-Label([string]$rel) {
     $name = [System.IO.Path]::GetFileName($rel)
-    if ($rel -eq 'LICENSE' -or $rel -eq 'THIRD-PARTY-NOTICES.md' -or $rel -match '^licenses/') { return 'repository' }
+    if ($rel -eq 'LICENSE' -or $rel -eq 'THIRD-PARTY-NOTICES.md' -or $rel -match '^licenses/' -or $repositoryPathOf.ContainsKey($rel)) { return 'repository' }
     if ($rel -notmatch '/' -and $name -match '^Ohanami\.(App\.(exe|dll|deps\.json|runtimeconfig\.json)|Core\.dll)$') { return 'ohanami' }
     if ($name -match '^(cudart|cublas|cublasLt)64_13\.dll$') { return 'cuda (llama.cpp の同梱物)' }
     if ($name -match '^cudnn.*64_9\.dll$') { return 'cudnn' }
@@ -150,7 +159,7 @@ foreach ($rel in ($actual.Keys | Sort-Object)) {
     $row = $rows[$rel]
     if ($row[2] -eq 'repository') {
         # 利用者向けの文書は、リポジトリの同じパスのファイルと、バイト単位で同一であること(表に SHA-256 は書かない。文書を直すたびに表を直さなくてよいように)
-        $repoFile = Join-Path $repoRoot $rel
+        $repoFile = Join-Path $repoRoot $(if ($repositoryPathOf.ContainsKey($rel)) { $repositoryPathOf[$rel] } else { $rel })
         if (-not (Test-Path -LiteralPath $repoFile -PathType Leaf)) { $problems.Add("リポジトリに無いファイルが出力にある: $rel") }
         elseif ((Get-FileHash -LiteralPath $actual[$rel].FullName -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $repoFile -Algorithm SHA256).Hash) { $problems.Add("出力の文書が、リポジトリのファイルと違う: $rel") }
     }
@@ -162,6 +171,22 @@ foreach ($rel in ($actual.Keys | Sort-Object)) {
 }
 foreach ($rel in ($rows.Keys | Sort-Object)) {
     if (-not $actual.ContainsKey($rel)) { $problems.Add("表にあるファイルが出力に無い: $rel") }
+}
+
+# データ削除の道具の文字コードと改行を、出力のファイルのバイト列で確かめる。
+# .ps1 は BOM 付きの UTF-8(Windows PowerShell 5.1 は BOM が無いと ANSI として読み、日本語が化ける)。
+# .cmd は ASCII だけで、改行は CRLF だけ(LF の前に必ず CR、CR の後に必ず LF)。
+if ($actual.ContainsKey('Ohanami-RemoveData.ps1')) {
+    $b = [System.IO.File]::ReadAllBytes($actual['Ohanami-RemoveData.ps1'].FullName)
+    if ($b.Length -lt 3 -or $b[0] -ne 0xEF -or $b[1] -ne 0xBB -or $b[2] -ne 0xBF) { $problems.Add('Ohanami-RemoveData.ps1 の先頭が BOM(EF BB BF)でない') }
+}
+if ($actual.ContainsKey('Ohanami-RemoveData.cmd')) {
+    $b = [System.IO.File]::ReadAllBytes($actual['Ohanami-RemoveData.cmd'].FullName)
+    for ($i = 0; $i -lt $b.Length; $i++) {
+        if ($b[$i] -gt 0x7F) { $problems.Add("Ohanami-RemoveData.cmd に ASCII 以外のバイトがある(位置 $i)"); break }
+        if ($b[$i] -eq 0x0A -and ($i -eq 0 -or $b[$i - 1] -ne 0x0D)) { $problems.Add("Ohanami-RemoveData.cmd に、CR の無い LF がある(位置 $i)"); break }
+        if ($b[$i] -eq 0x0D -and ($i + 1 -ge $b.Length -or $b[$i + 1] -ne 0x0A)) { $problems.Add("Ohanami-RemoveData.cmd に、LF の無い CR がある(位置 $i)"); break }
+    }
 }
 if ($problems.Count -gt 0) {
     $problems | ForEach-Object { Write-Host "   NG: $_" -ForegroundColor Red }

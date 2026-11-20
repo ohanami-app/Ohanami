@@ -26,11 +26,13 @@ Ohanami.sln
 src/
   Ohanami.Core/             ドメイン、インデックスのパイプライン、検索、DB アクセス。UI に依存しない
   Ohanami.App/              WPF のアプリ。Core を参照するだけ
+  Ohanami.RemoveData/       データ削除の道具(.cmd と .ps1。配布の zip に入る。アプリの外の、Windows PowerShell 5.1 の道具)。C# ではない
 tests/
   Ohanami.Core.Tests/       Core のテスト。正解データは TestData/
   Ohanami.App.Tests/        App のテスト。画面を出さずに測る。文言・色・窓の作り方の決まりを、ソースを読んで見張るテストを含む
   Ohanami.Bench.Tests/      tools/Ohanami.Bench のテスト
   Ohanami.KanaYardstick.Tests/  tools/Ohanami.KanaYardstick のテスト
+  Ohanami.RemoveData.Tests/ 削除の道具のテスト。Windows PowerShell 5.1 を起動して、%TEMP% の下に作った根だけを消す。ソースを読む見張りと、アプリの本物の書き手で作った根を消す通しを含む
   Ohanami.FakeLlamaServer/  VLM の起動・停止のテストに使う、偽の llama-server
 tools/
   Ohanami.Bench/            検索の回帰ベンチと採点
@@ -91,6 +93,7 @@ dotnet test --project tests/Ohanami.Core.Tests
 dotnet test --project tests/Ohanami.App.Tests
 dotnet test --project tests/Ohanami.Bench.Tests
 dotnet test --project tests/Ohanami.KanaYardstick.Tests
+dotnet test --project tests/Ohanami.RemoveData.Tests
 ```
 
 `Ohanami.Core.Tests` には、モデルの実物(`Category=Model`)と GPU(`Category=Gpu`)を使うテストがある。通常の実行はこの 2 つを除く。

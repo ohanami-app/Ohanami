@@ -69,24 +69,32 @@ public sealed class DistributionLayoutTests
     }
 
     [Fact]
-    public void The_notice_documents_in_the_table_are_exactly_the_repository_files_and_the_publish_targets_copy_them()
+    public void The_repository_rows_in_the_table_are_exactly_the_notice_documents_and_the_remove_data_scripts_and_the_publish_targets_copy_them()
     {
-        // 表の repository の行 = リポジトリの LICENSE・THIRD-PARTY-NOTICES.md・licenses/*.txt(増減したら、表も直す)
+        // 表の repository の行 = リポジトリの LICENSE・THIRD-PARTY-NOTICES.md・licenses/*.txt と、配布物の直下に置くデータ削除の道具の 2 つ(増減したら、表も直す)
+        string[] removeDataScripts = ["Ohanami-RemoveData.cmd", "Ohanami-RemoveData.ps1"];
         List<string> expected =
         [
             "LICENSE",
             "THIRD-PARTY-NOTICES.md",
             .. Directory.GetFiles(Repo("licenses"), "*.txt").Select(f => "licenses/" + System.IO.Path.GetFileName(f)),
+            .. removeDataScripts,
         ];
         Assert.Equal(expected.Order(StringComparer.Ordinal), ReadTable().Where(r => r.Source == "repository").Select(r => r.Path).Order(StringComparer.Ordinal));
         Assert.All(Directory.GetFiles(Repo("licenses")), f => Assert.EndsWith(".txt", f, StringComparison.Ordinal));   // txt 以外は、publish が運ばない
+        Assert.All(removeDataScripts, s => Assert.True(File.Exists(Repo("src", "Ohanami.RemoveData", s)), s));          // 配布物の直下の道具は、src/Ohanami.RemoveData/ の同名のファイル
 
-        // publish の出力に入れる指定(LICENSE・THIRD-PARTY-NOTICES.md・licenses/*.txt)
+        // publish の出力に入れる指定(LICENSE・THIRD-PARTY-NOTICES.md・licenses/*.txt・データ削除の道具。削除の道具は、リンクで配布物の直下に置く)
         XElement project = XDocument.Load(Repo("build", "OhanamiPublish.targets")).Root!;
         List<string> includes = [.. project.Descendants("None").Select(e => (string?)e.Attribute("Include") ?? "")];
         Assert.Contains(includes, i => i.EndsWith(@"..\LICENSE", StringComparison.Ordinal));
         Assert.Contains(includes, i => i.EndsWith(@"..\THIRD-PARTY-NOTICES.md", StringComparison.Ordinal));
         Assert.Contains(includes, i => i.EndsWith(@"..\licenses\*.txt", StringComparison.Ordinal));
+        foreach (string s in removeDataScripts)
+        {
+            XElement item = Assert.Single(project.Descendants("None"), e => ((string?)e.Attribute("Include") ?? "").EndsWith(@"..\src\Ohanami.RemoveData\" + s, StringComparison.Ordinal));
+            Assert.Equal(s, (string?)item.Attribute("Link"));
+        }
         Assert.All(project.Descendants("None"), e => Assert.Equal("PreserveNewest", (string?)e.Attribute("CopyToPublishDirectory")));
     }
 
