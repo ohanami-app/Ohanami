@@ -11,7 +11,7 @@
   - この道具は、ログを書かない。ネットワークにも出ない。
 
   終了コード: 0 = 消した(消す物が無かった場合・知らない物を残しただけの場合・-ListOnly も 0)/ 1 = PowerShell 自身の失敗(引数の誤りなど)/
-  2 = 始める前に止めた(アプリが動いている・DB のファイル(ohanami.db と -wal・-shm)が開かれている・場所を決められない(相対パス・拒む根: ドライブなどのボリュームの根、\\?\ と \\.\ で始まる指定)・-Yes だけが付いている)/
+  2 = 始める前に止めた(アプリが動いている・DB のファイル(ohanami.db と -wal・-shm)を読み書きで開けない(開かれている・読み取り専用)・場所を決められない(相対パス・形の崩れた UNC・パスとして解釈できない値・拒む根: ドライブなどのボリュームの根、\\?\ と \\.\ で始まる指定)・-Yes だけが付いている)/
   3 = 利用者がやめた(入力が閉じた場合を含む)/ 4 = 消せなかった物がある、または調べられなかった所がある(消す物が 0 でも)/ 5 = 想定外のエラー
 
 .PARAMETER Mode
@@ -150,10 +150,12 @@ function Test-DevicePath([string]$path) {
     return $p.StartsWith('\\?\') -or $p.StartsWith('\\.\')
 }
 
-# 絶対パス: ドライブ文字 + 区切り(C:\x・C:/x)か、区切り 2 つで始まる UNC(\\server\share・//server/share)。
-# ドライブ文字だけで区切りが無い形(C:data)は、そのドライブの「今の作業フォルダ」からの相対なので、絶対としない。区切り 1 つで始まる形(\data)も同じ
+# 絶対パス: ドライブ文字 + 区切り(C:\x・C:/x)か、UNC(\\サーバー\共有 または //サーバー/共有 で始まり、サーバーと共有が空でない形)。
+# ドライブ文字だけで区切りが無い形(C:data)は、そのドライブの「今の作業フォルダ」からの相対なので、絶対としない。区切り 1 つで始まる形(\data)も同じ。
+# 形の崩れた UNC(\\server・\\・\\\x)も絶対としない(GetFullPath が例外を投げる・意味の違う場所に解決される、のどちらかになる)
 function Test-AbsolutePath([string]$path) {
-    return ($path -match '^[A-Za-z]:[\\/]') -or ($path -match '^[\\/]{2}')
+    if ($path -match '^[A-Za-z]:[\\/]') { return $true }
+    return ($path.Replace('/', '\') -match '^\\\\[^\\]+\\[^\\]+')
 }
 
 # ボリュームの根(C:\ や \\サーバー\共有)か。ここから末尾の区切りを落とすと、C: になって「そのドライブの今の作業フォルダ」を指してしまう
@@ -182,7 +184,8 @@ function Test-AppRunning([string]$root) {
     }
 }
 
-# (2) 根の ohanami.db・-wal・-shm のうち在る物を、すべて、共有なしで開けるか見る。1 つでも開けなければ、ほかのプロセス(動いているアプリ)が持っている。
+# (2) 根の ohanami.db・-wal・-shm のうち在る物を、すべて、共有なしの読み書きで開けるか見る。1 つでも開けなければ、ほかのプロセス(動いているアプリ)が持っているか、
+#     読み取り専用など、消す前に直すべき状態にある。どちらも、何も消さずに止める(消す途中で -wal だけが残る形を作らない)。
 #     (1) の名前は根の綴り(大文字小文字・8.3 の短い名前・リンク)で変わるので、綴りによらない受け皿として、ファイルそのものを見る。開けた物は、すぐ閉じる
 function Test-DatabaseBusy([string]$root) {
     $streams = New-Object System.Collections.Generic.List[object]
@@ -190,7 +193,7 @@ function Test-DatabaseBusy([string]$root) {
         foreach ($suffix in @('', '-wal', '-shm')) {
             $path = [System.IO.Path]::Combine($root, 'ohanami.db' + $suffix)
             if (-not [System.IO.File]::Exists($path)) { continue }
-            try { $streams.Add([System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)) }
+            try { $streams.Add([System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)) }
             catch { return $true }
         }
         return $false
@@ -206,7 +209,7 @@ function Get-RunningReason([string]$root) {
         return 'Ohanami が動いています。閉じてから、もう一度実行してください。何も消さずに終わります。'
     }
     if (Test-DatabaseBusy $root) {
-        return 'データベースのファイルが、ほかのプロセスに開かれています(Ohanami が動いているかもしれません)。閉じてから、もう一度実行してください。何も消さずに終わります。'
+        return 'データベースのファイルを、読み書きで開けませんでした。ほかのプロセスに開かれている(Ohanami が動いているかもしれません)か、読み取り専用です。閉じるか、読み取り専用を外してから、もう一度実行してください。何も消さずに終わります。'
     }
     return $null
 }
@@ -319,9 +322,10 @@ function Get-EmptiedDirs($inv, [string[]]$scopes, [bool]$includeRoot, $plannedFi
     return $result.ToArray()
 }
 
-# データベースの組を、本体・-wal・-shm の順に返す(本体が消せなければ、組の残りに手を付けない)
+# データベースの組を、-wal・-shm・本体の順に返す。途中で消せなくなっても、本体が残る(本体だけが先に消えて、-wal・-shm が孤児で残ると、
+# 次に作られるデータベースと並んでしまう)。1 つでも消せなければ、組の残りと、ほかの物には手を付けない
 function Get-DbFilesInOrder($inv) {
-    foreach ($suffix in @('', '-wal', '-shm')) {
+    foreach ($suffix in @('-wal', '-shm', '')) {
         $wanted = 'ohanami.db' + $suffix
         foreach ($f in $inv.Files) {
             if ($f.Group -eq 'Db' -and [string]::Equals([System.IO.Path]::GetFileName($f.Path), $wanted, [System.StringComparison]::OrdinalIgnoreCase)) { $f }
@@ -353,10 +357,14 @@ try {
         exit 2
     }
     if (-not (Test-AbsolutePath $rawRoot)) {
-        Write-Host ('データの場所を決められません: 絶対パス(例: C:\...)で指定してください。指定された値: ' + $rawRoot)
+        Write-Host ('データの場所を決められません: 絶対パス(例: C:\... または \\サーバー\共有\...)で指定してください。指定された値: ' + $rawRoot)
         exit 2
     }
-    $fullRoot = [System.IO.Path]::GetFullPath($rawRoot)
+    try { $fullRoot = [System.IO.Path]::GetFullPath($rawRoot) }
+    catch {
+        Write-Host ('データの場所を決められません: パスとして解釈できません(' + $_.Exception.Message + ')。指定された値: ' + $rawRoot)
+        exit 2
+    }
     if (Test-VolumeRoot $fullRoot) {
         Write-Host ('データの場所を決められません: ドライブの直下(' + $fullRoot + ')は使えません。Ohanami のフォルダを指定してください。指定された値: ' + $rawRoot)
         exit 2
@@ -458,8 +466,20 @@ try {
             Write-Host ''
             if ($Mode -eq 'All') {
                 Write-Host '「すべて」を選びました。次の物が失われます。'
-                Write-Host '  - インデックス(作り直しの目安: 1 万枚で約 36 時間。開発機で測った値で、PC によって変わります)'
-                Write-Host '  - 手動タグ(作り直せません)'
+                # インデックスと手動タグは、データベースの組に入っている。組が無いとき(空のフォルダだけ・サムネイルやログだけ)は、失われる物として書かない
+                if (@($targets | Where-Object { $_.Group -eq 'Db' }).Count -gt 0) {
+                    Write-Host '  - インデックス(作り直しの目安: 1 万枚で約 36 時間。開発機で測った値で、PC によって変わります)'
+                    Write-Host '  - 手動タグ(作り直せません)'
+                }
+                if (@($targets | Where-Object { $_.Group -ne 'Db' -and $_.Group -ne 'Models' }).Count -gt 0) {
+                    Write-Host '  - サムネイル・ログなど、Ohanami が作ったファイル'
+                }
+                if (@($targets | Where-Object { $_.Group -eq 'Models' }).Count -gt 0) {
+                    Write-Host '  - モデルのファイル'
+                }
+                if ($targets.Count -eq 0) {
+                    Write-Host '  - 空のフォルダだけです(消えるファイルはありません)'
+                }
             }
             else {
                 Write-Host 'モデルのファイルを消します。'

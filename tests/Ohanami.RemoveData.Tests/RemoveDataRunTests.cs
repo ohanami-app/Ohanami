@@ -162,28 +162,6 @@ public sealed class RemoveDataRunTests
     }
 
     [Fact]
-    public void A_database_that_cannot_be_deleted_stops_the_run_before_anything_else_is_touched()
-    {
-        using TempArea area = TempArea.Create();
-        string root = area.Combine("data");
-        DataRootLayout layout = DataRootLayout.CreateFull(root);
-        Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
-
-        // 開けるが消せないデータベース(読み取り専用)。削除の途中の失敗で、データベースの組を最初に消すので、ほかの物には手を付けずに止まる
-        File.SetAttributes(layout.DatabasePath, FileAttributes.ReadOnly);
-        try
-        {
-            Assert.Equal(4, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
-        }
-        finally
-        {
-            File.SetAttributes(layout.DatabasePath, FileAttributes.Normal);
-        }
-
-        Assert.Equal(before.OrderBy(kv => kv.Key), DataRootLayout.SnapshotFiles(root).OrderBy(kv => kv.Key));   // DB だけでなく、ほかの何も消えていない
-    }
-
-    [Fact]
     public void Without_a_mode_the_run_asks_and_when_input_is_closed_it_stops_without_removing()
     {
         using TempArea area = TempArea.Create();

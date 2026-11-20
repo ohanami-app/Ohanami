@@ -58,7 +58,7 @@ public sealed class SourceGuardTests
     // ---------------------------------------------------------------- 使わない言葉(コメントも数える)
 
     [Fact]
-    public void The_ps1_uses_none_of_the_words_for_recursive_removal_other_processes_file_writes_settings_or_the_network()
+    public void The_ps1_uses_none_of_the_words_for_recursive_removal_other_processes_creating_writing_moving_or_copying_files_settings_or_the_network()
     {
         IReadOnlyList<string> found = ScriptGuard.FindForbidden(ScriptText());
         Assert.True(found.Count == 0, "使わない言葉が道具にある(コメントも数える): " + string.Join(", ", found));
@@ -93,6 +93,38 @@ public sealed class SourceGuardTests
     [InlineData("[System." + "Diagnostics.Process]::Start('x')")]
     [InlineData("[Diagnostics.Process]::Start('x')")]
     [InlineData("# コメントの中でも当たる: Remove-Item")]
+    [InlineData("New-Item -ItemType File $p")]
+    [InlineData("Copy-Item $a $b")]
+    [InlineData("Move-Item $a $b")]
+    [InlineData("Rename-Item $a 'b'")]
+    [InlineData("Clear-Content $p")]
+    [InlineData("Get-ChildItem | Tee-Object -FilePath $p")]
+    [InlineData("Get-Process | Export-Csv $p")]
+    [InlineData("Start-Transcript -Path $p")]
+    [InlineData("Start-Job { 1 }")]
+    [InlineData("Invoke-Item $p")]
+    [InlineData("Register-ScheduledTask -TaskName x")]
+    [InlineData("Remove-ItemProperty -Path $p -Name x")]
+    [InlineData("ni $p")]
+    [InlineData("copy $a $b")]
+    [InlineData("mv $a $b")]
+    [InlineData("[System.IO.File]::WriteAllText($p, 'x')")]
+    [InlineData("[IO.File]::AppendAllLines($p, $l)")]
+    [InlineData("[System.IO.File]::Create($p)")]
+    [InlineData("[System.IO.File]::Move($a, $b)")]
+    [InlineData("[System.IO.File]::Copy($a, $b)")]
+    [InlineData("[System.IO.File]::Replace($a, $b, $c)")]
+    [InlineData("[System.IO.File]::OpenWrite($p)")]
+    [InlineData("[System.IO.File]::SetAttributes($p, 'Normal')")]
+    [InlineData("[System.IO.Directory]::CreateDirectory($p)")]
+    [InlineData("[System.IO.Directory]::Move($a, $b)")]
+    [InlineData("New-Object System.IO.StreamWriter($p)")]
+    [InlineData("[System.IO.FileStream]::new($p, [System.IO.FileMode]::Create)")]
+    [InlineData("[System.IO.File]::Open($p, [System.IO.FileMode]::OpenOrCreate)")]
+    [InlineData("'x' > $p")]
+    [InlineData("Get-Date >> $p")]
+    [InlineData("Get-Date >$p")]
+    [InlineData("Write-Output 1 > 'out.txt'")]
     public void The_forbidden_word_check_catches_the_spelling(string source) =>
         Assert.NotEmpty(ScriptGuard.FindForbidden(source));
 
@@ -101,6 +133,14 @@ public sealed class SourceGuardTests
     [InlineData("try { [System.IO.Directory]::Delete($dir.Path) } catch { }")]
     [InlineData("[System.IO.Directory]::Delete($script:RootPath)")]
     [InlineData("$deleted = 1; $result.Deleted.Add($x)")]
+    [InlineData("[System.IO.File]::Exists($p) -and [System.IO.File]::GetAttributes($p)")]
+    [InlineData("[System.IO.File]::Open($p, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)")]
+    [InlineData("[System.IO.Directory]::GetFiles($p)")]
+    [InlineData("$sha = [System.Security.Cryptography.SHA256]::Create()")]
+    [InlineData("if ($a -gt 1 -and $b -ge 2) { $x = 'a->b' }")]
+    [InlineData("# 矢印の -> と、ブロックコメントの終わりの #> と、ストリームの 2>&1 は当たらない")]
+    [InlineData("Write-Host 'a=>b' 2>&1")]
+    [InlineData("$stream = $null")]
     [InlineData("# 消せない物は、削除の呼び出しの例外から分かる")]
     [InlineData("Write-Host ('これは、ひらがなの「り」と、カタカナの「リ」')")]
     public void The_forbidden_word_check_lets_the_allowed_spellings_through(string source)

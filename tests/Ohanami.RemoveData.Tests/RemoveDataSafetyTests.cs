@@ -72,6 +72,8 @@ public sealed class RemoveDataSafetyTests
         // スラッシュの綴りでも、ドライブ直下・デバイスパスは拒む。ドライブ文字だけの C:data・C: と、区切り 1 つの \data・/data は、相対なので拒む
         "C:/", "C:/.", "C://", "//?/C:/x", @"\/?\C:\x", "//./C:/x", "//server/share", @"\\server\share",
         "C:data", "C:", @"\data", "/data",
+        // 形の崩れた UNC(サーバーだけ・共有が空・区切りが 3 つ以上): GetFullPath の例外になるか、意味の違う場所に解決されるので、2 で拒む
+        @"\\server", @"\\server\", @"\\", "//", "//server", "//server/", "///x", @"\\\x", @"\\\server\share",
     ];
 
     // 削除のモードは入口が拒むので、-ListOnly で、根の決め方の段階の拒否だけを見る
@@ -175,28 +177,56 @@ public sealed class RemoveDataSafetyTests
         AssertUntouched(root, before);
     }
 
-    [Fact]
-    public void A_wal_file_that_cannot_be_removed_stops_the_run_with_the_database_set_handled_first()
+    // 消す前の確かめは、データベースの組(ohanami.db・-wal・-shm)を、共有なしの読み書きで開く。読み取り専用の物は開けないので、何も消さずに 2 で止まる
+    // (消す途中で止まって、本体だけが先に消え、-wal・-shm が残る形を作らない)。
+    [Theory]
+    [InlineData("ohanami.db")]
+    [InlineData("ohanami.db-wal")]
+    [InlineData("ohanami.db-shm")]
+    public void A_read_only_database_file_is_found_before_anything_is_deleted(string name)
     {
-        // 開かれてはいないが消せない -wal(読み取り専用): データベースの組を最初に消す途中で失敗するので、残りの物には手を付けずに 4 で止まる
         using TempArea area = TempArea.Create();
         string root = area.Combine("data");
-        DataRootLayout layout = DataRootLayout.CreateFull(root);
-        string wal = Path.Combine(root, "ohanami.db-wal");
-        File.SetAttributes(wal, FileAttributes.ReadOnly);
+        DataRootLayout.CreateFull(root);
+        string target = Path.Combine(root, name);
+        Assert.True(File.Exists(target));
+        Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
+        File.SetAttributes(target, FileAttributes.ReadOnly);
         try
         {
-            Assert.Equal(4, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
+            Assert.Equal(2, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
+            Assert.Equal(2, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);   // モデルだけの削除でも、組を確かめてから始める
 
-            Assert.True(File.Exists(wal));
-            foreach (string model in layout.ModelFiles) Assert.True(File.Exists(model), model);                               // モデルにも手を付けない
-            Assert.True(File.Exists(Path.Combine(root, "llama-server.pid")));
-            Assert.True(File.Exists(Path.Combine(root, "logs", "ohanami-20261120.log")));
+            Assert.True(File.Exists(Path.Combine(root, "ohanami.db")));                    // 本体が残る
+            AssertUntouched(root, before);                                                  // -wal・-shm・モデル・サムネイル・ログも、何も消えていない
         }
         finally
         {
-            File.SetAttributes(wal, FileAttributes.Normal);
+            File.SetAttributes(target, FileAttributes.Normal);
         }
+    }
+
+    // 空のフォルダだけを消すとき、確認の文に、失われるインデックスと手動タグを書かない(データベースの組が無いので、失われない)。
+    // 組があるときは書く(文が出ていることの対照。出力の読み取りが壊れていれば、こちらが落ちる)
+    [Fact]
+    public void The_all_confirmation_names_the_index_and_manual_tags_only_when_the_database_set_exists()
+    {
+        using TempArea area = TempArea.Create();
+        string full = area.Combine("full");
+        DataRootLayout.CreateFull(full);
+        ScriptResult withDb = Run(area, Args(full), stdin: ["2", "n"]);
+        Assert.Equal(3, withDb.ExitCode);
+        Assert.Contains("作り直しの目安", withDb.Output);
+        Assert.Contains("手動タグ(作り直せません)", withDb.Output);
+
+        string emptyOnly = area.Combine("empty");
+        Directory.CreateDirectory(Path.Combine(emptyOnly, "logs"));
+        Directory.CreateDirectory(Path.Combine(emptyOnly, "thumbs", "v1", "ab"));
+        ScriptResult noDb = Run(area, Args(emptyOnly), stdin: ["2", "y"]);
+        Assert.Equal(0, noDb.ExitCode);
+        Assert.DoesNotContain("作り直しの目安", noDb.Output);
+        Assert.DoesNotContain("手動タグ(作り直せません)", noDb.Output);
+        Assert.False(Directory.Exists(emptyOnly));
     }
 
     // ---------------------------------------------------------------- 調べられなかった所
