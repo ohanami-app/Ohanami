@@ -15,11 +15,14 @@
   </PropertyGroup>
 
   <!--
-    配布物に、利用者向けの文書を入れる: 直下に LICENSE と THIRD-PARTY-NOTICES.md、licenses/ にライセンスの全文(リポジトリの同じパス)。
+    配布物に、利用者向けの文書とデータ削除の道具を入れる: 直下に LICENSE・THIRD-PARTY-NOTICES.md・Ohanami-RemoveData.cmd・Ohanami-RemoveData.ps1、
+    licenses/ にライセンスの全文(文書はリポジトリの同じパス。削除の道具は src/Ohanami.RemoveData/ にあり、配布物では直下に置く)。
     publish のときだけ(CopyToPublishDirectory)。開発のビルドの出力には入れない。
     publish の出力が、リポジトリのファイルと同一であることは、tools/release/Publish-Release.ps1 が確かめる。
   -->
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\src\Ohanami.RemoveData\Ohanami-RemoveData.cmd" Link="Ohanami-RemoveData.cmd" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\src\Ohanami.RemoveData\Ohanami-RemoveData.ps1" Link="Ohanami-RemoveData.ps1" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\licenses\*.txt" Link="licenses\%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />

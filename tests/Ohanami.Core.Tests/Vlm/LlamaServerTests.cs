@@ -75,6 +75,11 @@ public sealed class LlamaServerTests
         Assert.True(await FakeLlama.UntilAsync(() => server.LogTail().Contains("--image-max-tokens 3584", StringComparison.Ordinal)));
         Assert.Contains("-ngl 99 -c 8192 -np 1 -cram 0", server.LogTail(), StringComparison.Ordinal);
         Assert.True(File.Exists(server.LogPath));
+
+        // ログの名前と置き場: データ削除の道具(src/Ohanami.RemoveData/Ohanami-RemoveData.ps1)は、
+        // 「logs\ の下の llama-server-yyyyMMdd-HHmmss-fff.log」という名前の型だけを頼りに消す。ここを変えたら、道具の表も同じに直す。
+        Assert.Equal(dir.File("logs"), Path.GetDirectoryName(server.LogPath));
+        Assert.Matches(@"^llama-server-\d{8}-\d{6}-\d{3}\.log$", Path.GetFileName(server.LogPath));
     }
 
     [Fact]

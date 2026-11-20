@@ -8,6 +8,7 @@
 | `tests/Ohanami.App.Tests` | `Ohanami.App` のテスト。画面を出さずに測る。文言・色・窓の作り方の決まりを、ソースを読んで見張るテストを含む | `runtime/`(App のビルドが要る。下) |
 | `tests/Ohanami.Bench.Tests` | `tools/Ohanami.Bench`(検索の回帰ベンチと採点)のテスト | `runtime/`(Bench のビルドが要る。下) |
 | `tests/Ohanami.KanaYardstick.Tests` | `tools/Ohanami.KanaYardstick`(濁点・半濁点の読み取りの尺)のテスト。画像の仕様・採点・表・描画(WPF なので STA のスレッドで呼ぶ) | Windows に、游ゴシック(Yu Gothic)とメイリオ(Meiryo)が入っていること(描画のテストは、無ければ「フォントが無い」で**失敗**する)。`runtime/` は要らない |
+| `tests/Ohanami.RemoveData.Tests` | `src/Ohanami.RemoveData/`(データ削除の道具: `.cmd` と `.ps1`)のテスト。**Windows PowerShell 5.1(`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`)を子プロセスで起動して、`.ps1` を実際に動かす**(全体で約 1 分)。削除を試すのは、このテストが `%TEMP%` の下に作った根だけ。動かさずに決まりを見張るテスト(文字コード・改行・使わない言葉・Core の名前との一致)と、アプリの本物の書き手で作った根を消す通しを含む | `runtime/`(App を参照するので、App のビルドが要る。下)。Windows PowerShell 5.1(Windows 11 に標準で入っている) |
 | `tests/Ohanami.FakeLlamaServer` | テストではない。VLM の起動・停止のテストが使う、偽の llama-server(Core.Tests が参照して、ビルドする) | |
 
 ## 最初に 1 回: 要るファイルを置く
@@ -32,6 +33,7 @@ dotnet test --project tests/Ohanami.Core.Tests --filter-not-trait "Category=Mode
 dotnet test --project tests/Ohanami.App.Tests
 dotnet test --project tests/Ohanami.Bench.Tests
 dotnet test --project tests/Ohanami.KanaYardstick.Tests
+dotnet test --project tests/Ohanami.RemoveData.Tests
 ```
 
 `Ohanami.Core.Tests` には、`Category` の印が付いたテストがある。

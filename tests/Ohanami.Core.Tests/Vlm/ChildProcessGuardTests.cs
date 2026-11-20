@@ -41,6 +41,18 @@ public sealed class ChildProcessGuardTests
         return (FakeLlama.Guard(dir, log, inspector, useJob: false), inspector, log);
     }
 
+    [Fact]
+    public void The_pid_file_and_its_temporary_file_are_named_the_way_the_data_removal_script_expects()
+    {
+        // データ削除の道具(src/Ohanami.RemoveData/Ohanami-RemoveData.ps1)は、データの場所の直下の
+        // 「llama-server.pid」と「llama-server.pid.<32 桁の 16 進>.tmp」という名前だけを頼りに消す。ここを変えたら、道具の表も同じに直す。
+        // (一時ファイルは、改名で消えて観測できないので、書き手のソースを読む)
+        string guardSource = CommentStripper.StripCSharp(File.ReadAllText(Path.Combine(RepoPaths.Root, "src", "Ohanami.Core", "Vlm", "ChildProcessGuard.cs")));
+        Assert.Contains("PidFilePath + \".\" + Guid.NewGuid().ToString(\"N\") + \".tmp\"", guardSource, StringComparison.Ordinal);
+        string coreSource = CommentStripper.StripCSharp(File.ReadAllText(Path.Combine(RepoPaths.Root, "src", "Ohanami.Core", "OhanamiCore.cs")));
+        Assert.Contains("new ChildProcessGuard(Path.Combine(dbDirectory, \"llama-server.pid\")", coreSource, StringComparison.Ordinal);
+    }
+
     // ---------------------------------------------------------------- 同一性の判定(偽のプロセス調べ)
 
     [Fact]
