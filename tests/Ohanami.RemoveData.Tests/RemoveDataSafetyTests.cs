@@ -69,6 +69,9 @@ public sealed class RemoveDataSafetyTests
     [
         @"C:\", @"C:\.", @"C:\x\..", @"c:\", @"C:\\",
         @"\\?\C:\x", @"\\.\C:\x", @"\\?\UNC\server\share\x", @"\\?\C:\", @"\\.\PhysicalDrive0",
+        // スラッシュの綴りでも、ドライブ直下・デバイスパスは拒む。ドライブ文字だけの C:data・C: と、区切り 1 つの \data・/data は、相対なので拒む
+        "C:/", "C:/.", "C://", "//?/C:/x", @"\/?\C:\x", "//./C:/x", "//server/share", @"\\server\share",
+        "C:data", "C:", @"\data", "/data",
     ];
 
     // 削除のモードは入口が拒むので、-ListOnly で、根の決め方の段階の拒否だけを見る
@@ -82,6 +85,36 @@ public sealed class RemoveDataSafetyTests
 
         var env = new Dictionary<string, string> { [AppPaths.DataDirectoryVariable] = root };
         Assert.Equal(2, Run(area, ["-ListOnly"], env).ExitCode);
+    }
+
+    // アプリは、データの場所を Path.GetFullPath に通す。区切りが / の絶対パスも、同じ根を指すので、道具も絶対パスとして受ける
+    [Fact]
+    public void A_data_root_written_with_forward_slashes_is_an_absolute_path_and_means_the_same_folder()
+    {
+        using TempArea area = TempArea.Create();
+        string root = area.Combine("data");
+        DataRootLayout layout = DataRootLayout.CreateFull(root);
+        string slashed = root.Replace('\\', '/');
+        Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
+
+        var env = new Dictionary<string, string> { [AppPaths.DataDirectoryVariable] = slashed };
+        ScriptResult listed = Run(area, ["-ListOnly"], env);
+        Assert.Equal(0, listed.ExitCode);
+        Assert.Contains(Path.GetFullPath(slashed), listed.Output, StringComparison.Ordinal);
+
+        using (SingleInstance instance = SingleInstance.Acquire(root))                       // 動いているアプリは、/ の綴りでも見つかる
+        {
+            Assert.True(instance.IsOwner);
+            Assert.Equal(2, Run(area, Args(slashed, "-Mode", "All", "-Yes")).ExitCode);
+            Assert.Equal(2, Run(area, Args(slashed + "/", "-Mode", "Models", "-Yes")).ExitCode);
+        }
+        AssertUntouched(root, before);
+
+        Assert.Equal(0, Run(area, Args(slashed, "-Mode", "Models", "-Yes")).ExitCode);
+        foreach (string model in layout.ModelFiles) Assert.False(File.Exists(model), model);
+        Assert.True(File.Exists(layout.DatabasePath));
+        Assert.Equal(0, Run(area, Args(slashed, "-Mode", "All", "-Yes")).ExitCode);
+        Assert.False(Directory.Exists(root));
     }
 
     // ---------------------------------------------------------------- アプリが動いているかの確かめ

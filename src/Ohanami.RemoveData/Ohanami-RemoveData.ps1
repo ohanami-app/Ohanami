@@ -143,12 +143,16 @@ function Show-Limited($lines, [int]$limit) {
 
 # ---- 根の決め方(-DataRoot、環境変数、既定の順)
 # \\?\ と \\.\ の形は使わせない: アプリが動いているかの確かめは、根の綴りから名前を作るので、別の綴りだと、動いているアプリを見つけられない
+# (区切りは、\ も / も同じに扱う: Windows の .NET は、どちらも区切りとして受ける)
 function Test-DevicePath([string]$path) {
-    return $path.StartsWith('\\?\') -or $path.StartsWith('\\.\')
+    $p = $path.Replace('/', '\')
+    return $p.StartsWith('\\?\') -or $p.StartsWith('\\.\')
 }
 
+# 絶対パス: ドライブ文字 + 区切り(C:\x・C:/x)か、区切り 2 つで始まる UNC(\\server\share・//server/share)。
+# ドライブ文字だけで区切りが無い形(C:data)は、そのドライブの「今の作業フォルダ」からの相対なので、絶対としない。区切り 1 つで始まる形(\data)も同じ
 function Test-AbsolutePath([string]$path) {
-    return ($path -match '^[A-Za-z]:\\') -or ($path -match '^\\\\')
+    return ($path -match '^[A-Za-z]:[\\/]') -or ($path -match '^[\\/]{2}')
 }
 
 # ボリュームの根(C:\ や \\サーバー\共有)か。ここから末尾の区切りを落とすと、C: になって「そのドライブの今の作業フォルダ」を指してしまう

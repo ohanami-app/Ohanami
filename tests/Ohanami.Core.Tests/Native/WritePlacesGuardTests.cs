@@ -14,7 +14,8 @@ namespace Ohanami.Core.Tests;
 /// 表に無いファイルが書けば落ちる。落ちたら、(1) 書く物の名前と置き場を決め、(2) 道具の表(.ps1 の「名前と型の表」)に足し、
 /// (3) tests/Ohanami.RemoveData.Tests の根(DataRootLayout と RealWritersTests)に足し、(4) 道具の一覧を載せた ADR 0052 を直し、(5) この表に足す。
 /// 理由の欄は、その書き手が書く物と、それを消す道具の型を示す。
-/// 見張れない範囲: 型の名前を書かない呼び出し(リフレクション・別のアセンブリ経由)、NuGet のパッケージが自分で書く物(Core・App は、書くパッケージを使っていない。SQLite の -wal / -shm は
+/// 見張れない範囲: 型の名前を書かない呼び出し(リフレクション・別のアセンブリ経由)、変数で受けた FileInfo・DirectoryInfo の Create・Replace(string.Replace や別の Create と、書き方が同じ。
+/// MoveTo・CreateText・AppendText・OpenWrite と、new FileInfo(...) に続けた Create・Replace・CopyTo は拾う。CopyTo は、メモリの写しと区別できないので、使うファイルを表で決める)、NuGet のパッケージが自分で書く物(Core・App は、書くパッケージを使っていない。SQLite の -wal / -shm は
 /// DB を開いている間だけ SQLite が作る)。
 /// </summary>
 public sealed class WritePlacesGuardTests
@@ -38,6 +39,16 @@ public sealed class WritePlacesGuardTests
         (@"\bEnvironment\.SpecialFolder\b|\bEnvironment\.GetFolderPath\b|\bPath\.GetTempPath\b|\bPath\.GetTempFileName\b|\bPath\.GetRandomFileName\b", ["AppPaths.cs"],
             "データの場所を決める(既定は %LOCALAPPDATA%\\Ohanami。道具は同じ決め方を写している)。一時フォルダなど、ほかの置き場は使わない"),
         (@"\bMicrosoft\.Win32\.Registry\b|\bRegistryKey\b|\bIsolatedStorage\w*\b", [], "レジストリ・分離ストレージ(道具は、ファイルしか消さない。使うなら道具と ADR に足す)"),
+        // FileInfo・DirectoryInfo の書く側のメソッド、Directory.Move、ほかの File の書く API(変数の型を問わず、メソッドの名前で拾う)
+        (@"\bDirectory\.Move\b|\.(MoveTo|CreateText|AppendText|OpenWrite|CreateAsSymbolicLink)\(|\bFile\.(OpenHandle|Encrypt|Decrypt|CreateSymbolicLink)\b|\bDirectory\.CreateSymbolicLink\b"
+            + @"|\bnew\s+(FileInfo|DirectoryInfo)\s*\([^;]*?\)\s*\.(Create|Replace|CopyTo)\(",
+            [], "FileInfo・DirectoryInfo・Directory の移す・作る・書く(使うなら、書く物の名前と置き場を決めて、道具と ADR に足し、この表に許すファイルを足す)"),
+        // FileInfo.CopyTo は、Span・Stream の CopyTo(メモリや別のストリームへの写し)と書き方が同じで、拾い分けられない。使うファイルを表で決める。
+        // 表のファイルが、ファイルのコピーを足していないことは、レビューで見る
+        (@"\.CopyTo(Async)?\(", ["Siglip2Tokenizer.cs", "VectorTable.cs"], "CopyTo(Siglip2Tokenizer・VectorTable = メモリの Span の写し。ファイルのコピーではない)"),
+        // Win32 のファイル・フォルダの操作を、P/Invoke で直に呼ぶ(今は、どのファイルも呼んでいない)
+        (@"(?<!Directory\.)\b(CreateFile|MoveFile|CopyFile|ReplaceFile|WriteFile|CreateHardLink|CreateSymbolicLink|CreateDirectory|SHFileOperation|SHCreateDirectory)(Ex|2|Transacted)?[AW]?\s*\(", [],
+            "Win32 のファイル・フォルダの操作(P/Invoke)"),
     ];
 
     private static IEnumerable<string> SourceFiles()
@@ -106,6 +117,21 @@ public sealed class WritePlacesGuardTests
     [InlineData("Directory.CreateDirectory(dir);", 3)]
     [InlineData("var d = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);", 6)]
     [InlineData("using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(\"x\");", 7)]
+    [InlineData("Directory.Move(a, b);", 8)]
+    [InlineData("info.MoveTo(target);", 8)]
+    [InlineData("using var w = info.CreateText();", 8)]
+    [InlineData("using var w = file.AppendText();", 8)]
+    [InlineData("using var o = file.OpenWrite();", 8)]
+    [InlineData("using var h = File.OpenHandle(p, FileMode.Create);", 8)]
+    [InlineData("new FileInfo(p).Create();", 8)]
+    [InlineData("new FileInfo(p).Replace(dest, backup);", 8)]
+    [InlineData("new FileInfo(Path.Combine(a, b)).CopyTo(dest);", 8)]
+    [InlineData("File.CreateSymbolicLink(a, b);", 8)]
+    [InlineData("info.CopyTo(dest, true);", 9)]
+    [InlineData("await source.CopyToAsync(destination);", 9)]
+    [InlineData("[DllImport(\"kernel32.dll\")] static extern IntPtr CreateFileW(string name);", 10)]
+    [InlineData("SHFileOperation(ref op);", 10)]
+    [InlineData("CopyFileExW(a, b, null, 0, 0, 0);", 10)]
     public void The_rules_detect_what_they_are_meant_to_detect(string code, int rule)
     {
         Assert.Matches(Rules[rule].Pattern, code);
@@ -113,6 +139,10 @@ public sealed class WritePlacesGuardTests
 
     [Theory]
     [InlineData("var x = File.ReadAllText(path);")]
+    [InlineData("string s = text.Replace(a, b);")]
+    [InlineData("var c = factory.Create();")]
+    [InlineData("var info = new FileInfo(path); long n = info.Length;")]
+    [InlineData("foreach (FileInfo f in new DirectoryInfo(d).GetFiles(\"*.log\")) { }")]
     [InlineData("using var s = new FileStream(p, FileMode.Open, FileAccess.Read);")]
     [InlineData("await ModelRegistry.EnsureEmbeddingModelRegisteredAsync(db);")]
     public void The_rules_do_not_fire_on_reading_or_on_unrelated_names(string code)

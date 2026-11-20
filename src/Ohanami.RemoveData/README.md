@@ -23,7 +23,7 @@ Ohanami が PC に残したデータ(データベース・インデックス・�
 
 | ファイル | 文字コード | 改行 | 理由 |
 |---|---|---|---|
-| `Ohanami-RemoveData.ps1` | UTF-8、**BOM あり**(先頭の 3 バイトが `EF BB BF`) | LF でも CRLF でもよい(`.gitattributes` の既定) | BOM が無いと、Windows PowerShell 5.1 は、ファイルを ANSI(日本語 Windows では Shift_JIS)として読み、画面の日本語が化ける |
+| `Ohanami-RemoveData.ps1` | UTF-8、**BOM あり**(先頭の 3 バイトが `EF BB BF`) | LF(`.gitattributes` の `* text=auto eol=lf` が決める。取り出しでも LF) | BOM が無いと、Windows PowerShell 5.1 は、ファイルを ANSI(日本語 Windows では Shift_JIS)として読み、画面の日本語が化ける |
 | `Ohanami-RemoveData.cmd` | ASCII だけ(非 ASCII の文字を 1 つも入れない) | **CRLF だけ**(`.gitattributes` の `eol=crlf`) | cmd.exe の標準の改行に合わせる(LF だけの `.cmd` は、行の読み方が環境で揺れる、と知られている。ここでは動かして確かめていない)。非 ASCII を持たないので、コードページに左右されない |
 
 `.cmd` の中身は 5 行に決めてあり、テストが、1 文字の違いも見つける。
