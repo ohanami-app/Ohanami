@@ -169,10 +169,15 @@ public sealed class RemoveDataRunTests
         DataRootLayout layout = DataRootLayout.CreateFull(root);
         Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
 
-        // アプリの Mutex なしで、共有なしに開いたままにする(名前での検出をすり抜けた場合の、受け皿の確認)
-        using (new FileStream(layout.DatabasePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        // 開けるが消せないデータベース(読み取り専用)。削除の途中の失敗で、データベースの組を最初に消すので、ほかの物には手を付けずに止まる
+        File.SetAttributes(layout.DatabasePath, FileAttributes.ReadOnly);
+        try
         {
             Assert.Equal(4, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
+        }
+        finally
+        {
+            File.SetAttributes(layout.DatabasePath, FileAttributes.Normal);
         }
 
         Assert.Equal(before.OrderBy(kv => kv.Key), DataRootLayout.SnapshotFiles(root).OrderBy(kv => kv.Key));   // DB だけでなく、ほかの何も消えていない

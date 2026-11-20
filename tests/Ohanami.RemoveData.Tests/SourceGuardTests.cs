@@ -57,48 +57,92 @@ public sealed class SourceGuardTests
 
     // ---------------------------------------------------------------- 使わない言葉(コメントも数える)
 
-    /// <summary>(言葉, 部分一致にするか)。部分一致でない言葉は、前後が英数字・下線でないときだけ当たる(短い言葉が、別の語の中に当たらないように)。</summary>
-    private static readonly (string Word, bool Substring)[] Forbidden =
-    [
-        // 再帰の削除・ほかの削除
-        ("Remove-Item", false), ("-Recurse", false), ("rmdir", false), ("rd", false), ("del", false), ("Clear-RecycleBin", false),
-        // 文字列を実行する・ほかのプロセス
-        ("Invoke-Expression", false), ("iex", false), ("Add-Type", false), ("Start-Process", false), ("Stop-Process", false), ("taskkill", false),
-        ("EncodedCommand", false), ("FromBase64String", false),
-        // 設定の変更
-        ("Set-ExecutionPolicy", false), ("HKCU:", false), ("HKLM:", false), ("reg", false), ("Set-ItemProperty", false),
-        // ネットワーク
-        ("Invoke-WebRequest", false), ("Invoke-RestMethod", false), ("iwr", false), ("irm", false), ("curl", false), ("wget", false),
-        ("System.Net", true), ("Net.WebClient", true), ("Start-BitsTransfer", false), ("Test-Connection", false), ("Test-NetConnection", false),
-        ("Resolve-DnsName", false), ("http", true),
-    ];
-
     [Fact]
-    public void The_ps1_uses_none_of_the_words_for_recursive_removal_other_processes_settings_or_the_network()
+    public void The_ps1_uses_none_of_the_words_for_recursive_removal_other_processes_file_writes_settings_or_the_network()
     {
-        string text = ScriptText();
-        var found = new List<string>();
-        foreach ((string word, bool substring) in Forbidden)
-        {
-            string pattern = substring
-                ? Regex.Escape(word)
-                : "(?<![A-Za-z0-9_])" + Regex.Escape(word) + "(?![A-Za-z0-9_])";
-            foreach (Match m in Regex.Matches(text, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-                found.Add($"{word}(行 {text[..m.Index].Count(c => c == '\n') + 1})");
-        }
+        IReadOnlyList<string> found = ScriptGuard.FindForbidden(ScriptText());
         Assert.True(found.Count == 0, "使わない言葉が道具にある(コメントも数える): " + string.Join(", ", found));
     }
 
     [Fact]
-    public void The_ps1_deletes_only_with_single_item_calls()
+    public void The_ps1_deletes_only_with_the_two_single_item_forms()
     {
         string text = ScriptText();
+        IReadOnlyList<string> bad = ScriptGuard.FindBadDeletes(text);
+        Assert.True(bad.Count == 0, "許す形ではない Delete がある: " + string.Join(", ", bad));
+        Assert.True(ScriptGuard.CountAllowedDeletes(text) >= 3, "ファイルの削除・フォルダの削除の呼び出しが見つからない");
         Assert.Contains("[System.IO.File]::Delete(", text, StringComparison.Ordinal);
         Assert.Contains("[System.IO.Directory]::Delete(", text, StringComparison.Ordinal);
-        // フォルダの削除は、引数が 1 つ(再帰の指定が無い = 空のときだけ消える)
-        foreach (Match m in Regex.Matches(text, @"\[System\.IO\.Directory\]::Delete\(([^)]*)\)"))
-            Assert.DoesNotContain(",", m.Groups[1].Value, StringComparison.Ordinal);
     }
+
+    // 見張りそのものの確かめ(見逃さないこと、通すべき物を通すこと)
+    [Theory]
+    [InlineData("Remove-Item $p")]
+    [InlineData("remove-item $p -Recurse")]
+    [InlineData("rm $p")]
+    [InlineData("ri $p")]
+    [InlineData("del $p")]
+    [InlineData("erase $p")]
+    [InlineData("rd $p")]
+    [InlineData("rmdir $p")]
+    [InlineData("Set-Content $p 'x'")]
+    [InlineData("Add-Content $p 'x'")]
+    [InlineData("'x' | Out-File $p")]
+    [InlineData("Invoke-Command { 1 }")]
+    [InlineData("[Process]::Start('x')")]
+    [InlineData("[System." + "Diagnostics.Process]::Start('x')")]
+    [InlineData("[Diagnostics.Process]::Start('x')")]
+    [InlineData("# コメントの中でも当たる: Remove-Item")]
+    public void The_forbidden_word_check_catches_the_spelling(string source) =>
+        Assert.NotEmpty(ScriptGuard.FindForbidden(source));
+
+    [Theory]
+    [InlineData("[System.IO.File]::Delete($item.Path)")]
+    [InlineData("try { [System.IO.Directory]::Delete($dir.Path) } catch { }")]
+    [InlineData("[System.IO.Directory]::Delete($script:RootPath)")]
+    [InlineData("$deleted = 1; $result.Deleted.Add($x)")]
+    [InlineData("# 消せない物は、削除の呼び出しの例外から分かる")]
+    [InlineData("Write-Host ('これは、ひらがなの「り」と、カタカナの「リ」')")]
+    public void The_forbidden_word_check_lets_the_allowed_spellings_through(string source)
+    {
+        Assert.Empty(ScriptGuard.FindForbidden(source));
+        Assert.Empty(ScriptGuard.FindBadDeletes(source));
+    }
+
+    [Theory]
+    [InlineData("[System.IO.Directory]::Delete($p, $true)")]
+    [InlineData("[System.IO.Directory]::Delete($p,$true)")]
+    [InlineData("[IO.Directory]::Delete($p, $true)")]
+    [InlineData("[IO.Directory]::Delete($p)")]
+    [InlineData("[System.IO.Directory]::Delete((Join-Path $a $b), $true)")]
+    [InlineData("[System.IO.Directory]::Delete((Join-Path $a $b))")]
+    [InlineData("[System.IO.Directory]::Delete($p -replace 'x','y')")]
+    [InlineData("[System.IO.Directory]::Delete('C:\\x')")]
+    [InlineData("[System.IO.Directory]::Delete()")]
+    [InlineData("[System.IO.File]::Delete($a, $b)")]
+    [InlineData("$info.Delete()")]
+    [InlineData("$info.Delete($true)")]
+    [InlineData("$d.delete($true)")]
+    [InlineData("[System.IO.Directory]::DELETE($p, $true)")]
+    public void The_delete_check_fails_every_form_but_the_two_single_item_ones(string source) =>
+        Assert.NotEmpty(ScriptGuard.FindBadDeletes(source));
+
+    [Fact]
+    public void The_ps1_has_the_byte_order_mark_exactly_once()
+    {
+        byte[] bytes = ReadBytes(ScriptEntrance.ScriptName);
+        Assert.False(HasDoubledBom(bytes), "BOM が二重になっている");
+        Assert.DoesNotContain('\uFEFF', ScriptText());                      // 本文の途中にも無い
+    }
+
+    [Fact]
+    public void A_doubled_byte_order_mark_is_told_apart_by_the_check_the_test_uses()
+    {
+        Assert.True(HasDoubledBom([0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF, 0x23]));
+        Assert.False(HasDoubledBom([0xEF, 0xBB, 0xBF, 0x23, 0x20, 0x20]));
+    }
+
+    private static bool HasDoubledBom(byte[] bytes) => bytes.Length >= 6 && bytes[3] == 0xEF && bytes[4] == 0xBB && bytes[5] == 0xBF;
 
     // ---------------------------------------------------------------- アプリの側の名前との一致
 

@@ -12,7 +12,7 @@
          同梱する第三者のバイナリの SHA-256 は、実行時ではなく、ここで確かめる(llama-server.exe だけは、実行時にも確かめる)。
        - LICENSE・THIRD-PARTY-NOTICES.md・licenses/ の文書(表の出どころは repository)は、リポジトリの同じパスのファイルと、バイト単位で同一でなければ失敗。
        - データ削除の道具(直下の Ohanami-RemoveData.cmd・Ohanami-RemoveData.ps1。表の出どころは repository)は、リポジトリの src/Ohanami.RemoveData/ の同名のファイルと、バイト単位で同一でなければ失敗。
-         加えて文字コードと改行を確かめる: .ps1 は BOM 付きの UTF-8(先頭が EF BB BF)、.cmd は ASCII だけで、LF の前に必ず CR がある(CRLF)。
+         加えて文字コードと改行を確かめる: .ps1 は BOM 付きの UTF-8(先頭が EF BB BF で、二重でない)、.cmd は ASCII だけで、LF の前に必ず CR がある(CRLF)。
          Windows PowerShell 5.1 は BOM の無い .ps1 を ANSI として読むので、日本語が化ける。LF だけの .cmd は、cmd.exe の読み方が保証されない。違えば zip は作らない。
     3. 出力のすべてのファイルの中に、ビルドした PC のパスが残っていないことを確かめる(下の「パスの検査」)。
     4. zip を作り、2GiB 未満であることを確かめ、zip の SHA-256 を出す(<zip>.sha256 にも書く)。
@@ -179,6 +179,7 @@ foreach ($rel in ($rows.Keys | Sort-Object)) {
 if ($actual.ContainsKey('Ohanami-RemoveData.ps1')) {
     $b = [System.IO.File]::ReadAllBytes($actual['Ohanami-RemoveData.ps1'].FullName)
     if ($b.Length -lt 3 -or $b[0] -ne 0xEF -or $b[1] -ne 0xBB -or $b[2] -ne 0xBF) { $problems.Add('Ohanami-RemoveData.ps1 の先頭が BOM(EF BB BF)でない') }
+    if ($b.Length -ge 6 -and $b[3] -eq 0xEF -and $b[4] -eq 0xBB -and $b[5] -eq 0xBF) { $problems.Add('Ohanami-RemoveData.ps1 の BOM(EF BB BF)が二重になっている') }
 }
 if ($actual.ContainsKey('Ohanami-RemoveData.cmd')) {
     $b = [System.IO.File]::ReadAllBytes($actual['Ohanami-RemoveData.cmd'].FullName)
