@@ -210,7 +210,7 @@ function Get-RunningReason([string]$root) {
         return 'Ohanami が動いています。閉じてから、もう一度実行してください。何も消さずに終わります。'
     }
     if (Test-DatabaseBusy $root) {
-        return 'データベースのファイルを、読み書きで開けませんでした。ほかのプロセスに開かれている(Ohanami が動いているかもしれません)か、読み取り専用です。閉じるか、読み取り専用を外してから、もう一度実行してください。何も消さずに終わります。'
+        return 'データベースのファイルを、読み書きで開けませんでした。ほかのプロセスに開かれている (Ohanami が動いているかもしれません)か、読み取り専用です。閉じるか、読み取り専用を外してから、もう一度実行してください。何も消さずに終わります。'
     }
     return $null
 }
@@ -358,23 +358,23 @@ try {
         exit 2
     }
     if (-not (Test-AbsolutePath $rawRoot)) {
-        Write-Host ('データの場所を決められません: 絶対パス(例: C:\... または \\サーバー\共有\...)で指定してください。指定された値: ' + $rawRoot)
+        Write-Host ('データの場所を決められません: 絶対パス (例: C:\... または \\サーバー\共有\...)で指定してください。指定された値: ' + $rawRoot)
         exit 2
     }
     try { $fullRoot = [System.IO.Path]::GetFullPath($rawRoot) }
     catch {
-        Write-Host ('データの場所を決められません: パスとして解釈できません(' + $_.Exception.Message + ')。指定された値: ' + $rawRoot)
+        Write-Host ('データの場所を決められません: パスとして解釈できません (' + $_.Exception.Message + ')。指定された値: ' + $rawRoot)
         exit 2
     }
     if (Test-VolumeRoot $fullRoot) {
-        Write-Host ('データの場所を決められません: ドライブの直下(' + $fullRoot + ')は使えません。Ohanami のフォルダを指定してください。指定された値: ' + $rawRoot)
+        Write-Host ('データの場所を決められません: ドライブの直下 (' + $fullRoot + ')は使えません。Ohanami のフォルダを指定してください。指定された値: ' + $rawRoot)
         exit 2
     }
     $script:RootPath = $fullRoot.TrimEnd('\', '/')
 
     Write-Host ('データの場所: ' + $script:RootPath + '(' + $how + ')')
     if (-not [System.IO.Directory]::Exists($script:RootPath)) {
-        Write-Host '消す物はありません(データの場所がありません)。'
+        Write-Host '消す物はありません (データの場所がありません)。'
         exit 0
     }
     $rootIsLink = ([System.IO.File]::GetAttributes($script:RootPath) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
@@ -400,7 +400,7 @@ try {
     Write-Host ('  インデックス・手動タグ・ログ: {0} ファイル、{1}' -f $indexTotal.Count, (Format-Size $indexTotal.Bytes))
     Write-Host ''
     Write-Host '消さない物:'
-    Write-Host '  - 登録したスクリーンショットのフォルダ(中の画像)'
+    Write-Host '  - 登録したスクリーンショットのフォルダ (中の画像)'
     Write-Host ('  - アプリのフォルダ: ' + $PSScriptRoot + '(不要なら、手で消してください)')
     Write-Host '  - アプリのフォルダの近くの models フォルダなど、データの場所の外に置いたモデル'
     $modelsOverride = [Environment]::GetEnvironmentVariable($ModelsDirectoryVariable)
@@ -409,15 +409,15 @@ try {
     }
     if ($kept.Count -gt 0) {
         Write-Host ''
-        Write-Host ('知らない物・型に合わない物・リンクのフォルダ(残します): {0} 個' -f $kept.Count)
+        Write-Host ('知らない物・型に合わない物・リンクのフォルダ (残します): {0} 個' -f $kept.Count)
     }
     if ($inv.Unreadable.Count -gt 0) {
         Write-Host ''
-        Write-Host ('中を調べられなかったフォルダ(中の物は消しません): {0} 個' -f $inv.Unreadable.Count)
+        Write-Host ('中を調べられなかったフォルダ (中の物は消しません): {0} 個' -f $inv.Unreadable.Count)
     }
     if ($rootIsLink) {
         Write-Host ''
-        Write-Host 'データの場所は、リンク(ジャンクションかシンボリックリンク)です。中の物は消しますが、リンクそのものは消しません。'
+        Write-Host 'データの場所は、リンク (ジャンクションかシンボリックリンク)です。中の物は消しますが、リンクそのものは消しません。'
     }
 
     if ($ListOnly) {
@@ -437,8 +437,8 @@ try {
     if (-not $PSBoundParameters.ContainsKey('Mode')) {
         Write-Host ''
         Write-Host '消す物を選んでください。'
-        Write-Host ('  1  モデルのファイルとサムネイル(約 ' + (Format-Size $lightTotal.Bytes) + ')')
-        Write-Host '  2  すべて(モデルのファイル・サムネイル・インデックス・手動タグ・ログ)'
+        Write-Host ('  1  モデルのファイルとサムネイル (約 ' + (Format-Size $lightTotal.Bytes) + ')')
+        Write-Host '  2  すべて (モデルのファイル・サムネイル・インデックス・手動タグ・ログ)'
         Write-Host 'それ以外を入力すると、何も消さずに終わります。'
         $answer = Read-Host '番号'
         if ($null -eq $answer) { Write-Host '入力がないので、何も消さずに終わります。'; exit 3 }
@@ -475,8 +475,8 @@ try {
                 Write-Host '「すべて」を選びました。次の物が失われます。'
                 # インデックスと手動タグは、データベースの組に入っている。組が無いとき(空のフォルダだけ・サムネイルやログだけ)は、失われる物として書かない
                 if (@($targets | Where-Object { $_.Group -eq 'Db' }).Count -gt 0) {
-                    Write-Host '  - インデックス(作り直しの目安: 1 万枚で約 36 時間。開発機で測った値で、PC によって変わります)'
-                    Write-Host '  - 手動タグ(作り直せません)'
+                    Write-Host '  - インデックス (作り直しの目安: 1 万枚で約 36 時間。開発機で測った値で、PC によって変わります)'
+                    Write-Host '  - 手動タグ (作り直せません)'
                 }
                 if (@($targets | Where-Object { $_.Group -eq 'Index' }).Count -gt 0) {
                     Write-Host '  - ログなど、Ohanami が作ったファイル'
@@ -488,7 +488,7 @@ try {
                     Write-Host '  - モデルのファイル'
                 }
                 if ($targets.Count -eq 0) {
-                    Write-Host '  - 空のフォルダだけです(消えるファイルはありません)'
+                    Write-Host '  - 空のフォルダだけです (消えるファイルはありません)'
                 }
             }
             else {
@@ -548,8 +548,8 @@ try {
     $deletedThumbs = Get-Total @($result.Deleted | Where-Object { $_.Group -eq 'Thumbs' })
     $deletedIndex = Get-Total @($result.Deleted | Where-Object { $_.Group -ne 'Models' -and $_.Group -ne 'Thumbs' })
     Write-Host ''
-    $reportLine = ('消しました: モデルのファイル {0} ファイル({1})、サムネイル {2} ファイル({3})' -f $deletedModels.Count, (Format-Size $deletedModels.Bytes), $deletedThumbs.Count, (Format-Size $deletedThumbs.Bytes))
-    if ($Mode -eq 'All') { $reportLine += ('、そのほか {0} ファイル({1})' -f $deletedIndex.Count, (Format-Size $deletedIndex.Bytes)) }
+    $reportLine = ('消しました: モデルのファイル {0} ファイル ({1})、サムネイル {2} ファイル ({3})' -f $deletedModels.Count, (Format-Size $deletedModels.Bytes), $deletedThumbs.Count, (Format-Size $deletedThumbs.Bytes))
+    if ($Mode -eq 'All') { $reportLine += ('、そのほか {0} ファイル ({1})' -f $deletedIndex.Count, (Format-Size $deletedIndex.Bytes)) }
     Write-Host $reportLine
     if ($Mode -eq 'ModelsAndThumbnails' -and -not $skipDeletion) { Write-Host 'サムネイルは、次に一覧や詳細を表示したときに作り直されます。' }
     $failedLines = @($result.Failed | ForEach-Object { $_.Path + ' - ' + $_.Reason })
@@ -561,12 +561,12 @@ try {
 
     foreach ($u in $unreadableInScope) { Write-Host ('中を調べられなかったので、中の物は消していません: ' + $u.Path + ' - ' + $u.Reason) }
     if ($kept.Count -gt 0) {
-        Write-Host ('残した物(知らない物・型に合わない物・リンクのフォルダ): {0} 個' -f $kept.Count)
+        Write-Host ('残した物 (知らない物・型に合わない物・リンクのフォルダ): {0} 個' -f $kept.Count)
         Show-Limited $kept 20
     }
     if ($rootRemoved) { Write-Host 'データのフォルダ: 消しました' }
-    elseif ($rootIsLink) { Write-Host ('データのフォルダ: リンクなので、そのまま残しました(' + $script:RootPath + ')') }
-    else { Write-Host ('データのフォルダ: 残しました(' + $script:RootPath + ')') }
+    elseif ($rootIsLink) { Write-Host ('データのフォルダ: リンクなので、そのまま残しました (' + $script:RootPath + ')') }
+    else { Write-Host ('データのフォルダ: 残しました (' + $script:RootPath + ')') }
     Write-Host ('アプリのフォルダは消していません: ' + $PSScriptRoot)
 
     if ($result.Failed.Count -gt 0 -or $unreadableInScope.Count -gt 0 -or $stopped) { exit 4 }

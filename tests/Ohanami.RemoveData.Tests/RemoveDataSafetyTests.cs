@@ -217,7 +217,7 @@ public sealed class RemoveDataSafetyTests
         ScriptResult withDb = Run(area, Args(full), stdin: ["2", "n"]);
         Assert.Equal(3, withDb.ExitCode);
         Assert.Contains("作り直しの目安", withDb.Output);
-        Assert.Contains("手動タグ(作り直せません)", withDb.Output);
+        Assert.Contains("手動タグ (作り直せません)", withDb.Output);
 
         string emptyOnly = area.Combine("empty");
         Directory.CreateDirectory(Path.Combine(emptyOnly, "logs"));
@@ -225,7 +225,7 @@ public sealed class RemoveDataSafetyTests
         ScriptResult noDb = Run(area, Args(emptyOnly), stdin: ["2", "y"]);
         Assert.Equal(0, noDb.ExitCode);
         Assert.DoesNotContain("作り直しの目安", noDb.Output);
-        Assert.DoesNotContain("手動タグ(作り直せません)", noDb.Output);
+        Assert.DoesNotContain("手動タグ (作り直せません)", noDb.Output);
         Assert.False(Directory.Exists(emptyOnly));
     }
 

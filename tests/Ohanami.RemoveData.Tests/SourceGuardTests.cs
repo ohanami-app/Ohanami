@@ -184,6 +184,52 @@ public sealed class SourceGuardTests
 
     private static bool HasDoubledBom(byte[] bytes) => bytes.Length >= 6 && bytes[3] == 0xEF && bytes[4] == 0xBB && bytes[5] == 0xBF;
 
+    // ---------------------------------------------------------------- 画面の文の括弧(ADR 0038: 括弧は半角。日本語の文字のあとの「(」の前に、半角の空白を 1 つ入れる)
+
+    [Fact]
+    public void The_text_the_ps1_prints_uses_half_width_brackets_with_a_space_after_a_japanese_character()
+    {
+        Assert.Empty(BracketViolations(ScriptText()));
+    }
+
+    [Theory]
+    [InlineData("Write-Host 'モデル(約 1 KB)'", 1)]
+    [InlineData("Write-Host 'モデル (約 1 KB)'", 0)]
+    [InlineData("Write-Host 'モデル（約 1 KB）'", 1)]
+    [InlineData("Write-Host ('{0} ファイル({1})' -f $a, $b)", 1)]
+    [InlineData("Write-Host ('ファイル ({1})' -f $a, $b)", 0)]
+    [InlineData("Write-Host 'パス ' + $x + '(' + $y + ')'", 0)]               // 日本語の文字の直後ではない
+    [InlineData("# 説明(コメントは数えない)", 0)]
+    [InlineData("return $true   # 開けなかった(別の所有者)", 0)]
+    public void The_bracket_check_finds_the_forms_it_is_meant_to_find(string line, int expected)
+    {
+        Assert.Equal(expected, BracketViolations(line).Count);
+    }
+
+    /// <summary>コメント(<c>&lt;# #&gt;</c> の説明・行頭の <c>#</c>・行末の <c># </c>)を除いた行から、全角の括弧と、日本語の文字に続く半角の「(」を探す。</summary>
+    private static List<string> BracketViolations(string text)
+    {
+        var found = new List<string>();
+        bool inHelp = false;
+        string[] lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i].TrimEnd('\r');
+            if (line.StartsWith("<#", StringComparison.Ordinal)) inHelp = true;
+            if (inHelp)
+            {
+                if (line.Contains("#>", StringComparison.Ordinal)) inHelp = false;
+                continue;
+            }
+            if (line.TrimStart().StartsWith('#')) continue;
+            Match comment = Regex.Match(line, @"\s+#\s");
+            string code = comment.Success ? line[..comment.Index] : line;
+            if (Regex.IsMatch(code, "[（）]") || Regex.IsMatch(code, @"[\u3000-\u30FF\u3400-\u9FFF\uFF00-\uFFEF]\("))
+                found.Add($"{i + 1}: {line.Trim()}");
+        }
+        return found;
+    }
+
     // ---------------------------------------------------------------- アプリの側の名前との一致
 
     [Fact]
