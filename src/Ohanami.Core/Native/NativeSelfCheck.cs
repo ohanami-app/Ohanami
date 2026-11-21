@@ -82,7 +82,7 @@ internal static class NativeSelfCheck
             if (!IsEnforced(m.Name)) continue; // ドライバ・オーバーレイの部品など。報告には載せるが、違反にしない
             string dir = NormalizeDirectory(Path.GetDirectoryName(m.Path) ?? "");
             if (IsUnder(dir, nativeDir)) continue;
-            violations.Add($"{m.Name} がアプリのディレクトリの外から読まれている: {m.Path}(アプリのディレクトリ: {nativeDirectory})");
+            violations.Add($"{m.Name} がアプリのディレクトリの外から読まれている: {m.Path} (アプリのディレクトリ: {nativeDirectory})");
         }
 
         foreach (string pattern in RequiredAfterRun)

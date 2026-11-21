@@ -25,8 +25,8 @@ internal static class UiText
         (new Regex(" ?期待 sha256 " + Sha + "。", Opts), ""),
         (new Regex(":? ?期待 " + Sha + "、実際 " + Sha, Opts), ""),
         (new Regex("の sha256 が違う", Opts), "の中身が想定と違います (SHA-256 が一致しません)"),
-        // 期待・実際の値を消したあと、「(場所: …)」が直に続くと括弧が 2 つ続く(「…(SHA-256 が一致しません)(場所: …)」)ので、1 つにまとめる(「(SHA-256 が一致しません。場所: …)」)
-        (new Regex(@"\(SHA-256 が一致しません\)\(場所: ", Opts), "(SHA-256 が一致しません。場所: "),
+        // 期待・実際の値を消したあと、「(場所: …)」が続くと括弧が 2 つ続く(「…(SHA-256 が一致しません) (場所: …)」)ので、1 つにまとめる(「(SHA-256 が一致しません。場所: …)」)
+        (new Regex(@"\(SHA-256 が一致しません\) ?\(場所: ", Opts), "(SHA-256 が一致しません。場所: "),
         // VLM の実行プログラム(パスの中の名前は残す: どこに置けばよいかの手がかり)
         // 手がかりになる名前(llama-server)は、括弧で残す(ADR 0038。直したあとの文に、もう一度かからないよう、「(」の直後は除く)
         (new Regex(@"llama-server\.exe が無い", Opts), "VLM の実行ファイル (llama-server) が無い"),
@@ -112,11 +112,18 @@ internal static class UiText
     private static readonly Regex NonSpaceRun = new(@"\S+", Opts);
 
     /// <summary>
-    /// 半角の「(」の前に、半角の空白を 1 つ入れる(「検索準備完了 (…)」「llama-server (…)」)。パスは変えない: 空白で区切った塊が「\」か「/」を含むときは、パスとみなして、そのままにする
-    /// (ファイル名の「(」を変えると、コピーしたパスが違ってしまう)。
+    /// 半角の「(」の前に、半角の空白を 1 つ入れる(「検索準備完了 (…)」「llama-server (…)」)。パスとファイル名は変えない:
+    /// 空白で区切った塊が「\」か「/」を含むとき、または末尾が拡張子(<see cref="FileNameEnd"/>)で終わるときは、パスかファイル名とみなして、そのままにする
+    /// (名前の中の「(」を変えると、コピーした名前が違ってしまう)。塊の末尾の句読点と閉じの括弧は、拡張子を見るときに除く。
     /// </summary>
     internal static string SpaceBeforeParen(string text) =>
-        NonSpaceRun.Replace(text, m => m.Value.Contains('\\', StringComparison.Ordinal) || m.Value.Contains('/', StringComparison.Ordinal) ? m.Value : ParenWithoutSpace.Replace(m.Value, " ("));
+        NonSpaceRun.Replace(text, m => LooksLikePathOrFileName(m.Value) ? m.Value : ParenWithoutSpace.Replace(m.Value, " ("));
+
+    /// <summary>塊の末尾の、拡張子(<c>.png</c> など。英数字 1〜5 字で、英字を 1 字は含む。小数の <c>0.5</c> は拡張子ではない)。後ろの句読点と閉じの括弧は除いて見る。</summary>
+    private static readonly Regex FileNameEnd = new(@"\.(?=[0-9]*[A-Za-z])[A-Za-z0-9]{1,5}[)\]」』）。、,.:;!?…]*$", Opts);
+
+    private static bool LooksLikePathOrFileName(string chunk) =>
+        chunk.Contains('\\', StringComparison.Ordinal) || chunk.Contains('/', StringComparison.Ordinal) || FileNameEnd.IsMatch(chunk);
 
     /// <summary>画面に出す形にする(null は空の文字列)。</summary>
     public static string Plain(string? message)

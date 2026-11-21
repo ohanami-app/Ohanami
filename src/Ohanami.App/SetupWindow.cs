@@ -683,7 +683,7 @@ internal sealed class SetupWindow : Window
         {
             ModelSets.FeatureVector => plan.EmbeddingDirectory,
             ModelSets.Vlm => plan.VlmDirectory,
-            _ => throw new InvalidOperationException($"取るファイルの組が分からない: {f.Set}({f.RelativePath})"),
+            _ => throw new InvalidOperationException($"取るファイルの組が分からない: {f.Set} ({f.RelativePath})"),
         };
         return [.. plan.Files
             .GroupBy(f => Path.GetPathRoot(Path.GetFullPath(DirectoryOf(f))) ?? "", StringComparer.OrdinalIgnoreCase)

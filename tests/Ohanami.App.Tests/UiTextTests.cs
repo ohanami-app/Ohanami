@@ -88,14 +88,14 @@ public sealed class UiTextTests
     public void Plain_hides_sha256_values_and_keeps_what_is_missing_and_where_it_was_looked_for()
     {
         // 規則 11: 何が無いか、どこを探したかは画面に出す。sha256 の値は画面に出さない(ログには元の文が残る)
-        string missing = $"モデルのファイルが無い: visual/model.onnx(探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト、sha256 {Sha}。";
+        string missing = $"モデルのファイルが無い: visual/model.onnx (探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト、sha256 {Sha}。";
         string shown = UiText.Plain(missing);
-        Assert.Equal("モデルのファイルがありません: visual/model.onnx(探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト。", shown);
+        Assert.Equal("モデルのファイルがありません: visual/model.onnx (探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト。", shown);
         Assert.DoesNotContain(Sha, shown, StringComparison.Ordinal);
 
-        string different = $"モデルのファイルの sha256 が違う: visual/model.onnx 期待 {Sha}、実際 {Sha2}(場所: C:\\m\\visual\\model.onnx)。";
+        string different = $"モデルのファイルの sha256 が違う: visual/model.onnx 期待 {Sha}、実際 {Sha2} (場所: C:\\m\\visual\\model.onnx)。";
         shown = UiText.Plain(different);
-        Assert.Equal("モデルのファイルの中身が想定と違います (SHA-256 が一致しません): visual/model.onnx(場所: C:\\m\\visual\\model.onnx)。", shown);
+        Assert.Equal("モデルのファイルの中身が想定と違います (SHA-256 が一致しません): visual/model.onnx (場所: C:\\m\\visual\\model.onnx)。", shown);
         Assert.DoesNotContain(Sha, shown, StringComparison.Ordinal);
         Assert.DoesNotContain(Sha2, shown, StringComparison.Ordinal);
     }
@@ -106,7 +106,7 @@ public sealed class UiTextTests
         string noExe = $"llama-server.exe が無い: C:\\rt\\llama-server.exe。期待 sha256 {Sha}。";
         Assert.Equal("VLM の実行ファイル (llama-server) がありません: C:\\rt\\llama-server.exe。", UiText.Plain(noExe));
 
-        string differentExe = $"llama-server.exe の sha256 が違う: 期待 {Sha}、実際 {Sha2}(場所: C:\\rt\\llama-server.exe)。";
+        string differentExe = $"llama-server.exe の sha256 が違う: 期待 {Sha}、実際 {Sha2} (場所: C:\\rt\\llama-server.exe)。";
         string shown = UiText.Plain(differentExe);
         Assert.Equal("VLM の実行ファイル (llama-server) の中身が想定と違います (SHA-256 が一致しません。場所: C:\\rt\\llama-server.exe)。", shown);
 
@@ -140,7 +140,13 @@ public sealed class UiTextTests
     [InlineData("1\n2(行ごとに数える)\n(行の頭)", "1\n2 (行ごとに数える)\n(行の頭)")]
     [InlineData("C:\\shots\\名前(1).png: 読み込めません", "C:\\shots\\名前(1).png: 読み込めません")]         // パスの中は変えない
     [InlineData("shots/a(1).png", "shots/a(1).png")]
-    public void SpaceBeforeParen_puts_a_space_before_every_half_width_paren_except_in_paths_and_after_a_space_or_an_opening_bracket(string text, string expected)
+    [InlineData("photo(1).png", "photo(1).png")]                                                             // ファイル名の中は変えない
+    [InlineData("写真(1).png", "写真(1).png")]
+    [InlineData("読み込めません: スクリーン(2).jpg。", "読み込めません: スクリーン(2).jpg。")]               // 末尾の句読点は除いて見る
+    [InlineData("読み込めません (a(1).webp)", "読み込めません (a(1).webp)")]                                 // 末尾の閉じの括弧も除いて見る
+    [InlineData("model.onnx(場所: 1)", "model.onnx (場所: 1)")]                                              // 拡張子のすぐ後ろの注記の括弧は、名前の中ではないので空ける
+    [InlineData("x(0.5)", "x (0.5)")]                                                                      // 小数は拡張子ではない
+    public void SpaceBeforeParen_puts_a_space_before_every_half_width_paren_except_in_paths_file_names_and_after_a_space_or_an_opening_bracket(string text, string expected)
     {
         Assert.Equal(expected, UiText.SpaceBeforeParen(text));
     }
@@ -164,8 +170,8 @@ public sealed class UiTextTests
             Assert.DoesNotContain("検索は少し待つ", bar.CoreText, StringComparison.Ordinal);          // テキスト検索は読み込み中も答える
 
             bar.ShowCoreStatus(new CoreStatus(CorePhase.Failed,
-                $"モデルのファイルが無い: visual/model.onnx(探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト、sha256 {Sha}。", false, 0));
-            Assert.Equal("起動できませんでした: モデルのファイルがありません: visual/model.onnx(探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト。", bar.CoreText);
+                $"モデルのファイルが無い: visual/model.onnx (探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト、sha256 {Sha}。", false, 0));
+            Assert.Equal("起動できませんでした: モデルのファイルがありません: visual/model.onnx (探した場所: C:\\m\\visual\\model.onnx)。期待サイズ 123 バイト。", bar.CoreText);
             Assert.DoesNotContain("Core", bar.CoreText, StringComparison.Ordinal);
             Assert.DoesNotContain(Sha, bar.CoreText, StringComparison.Ordinal);
         });

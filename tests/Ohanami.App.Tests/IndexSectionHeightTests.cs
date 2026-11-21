@@ -34,7 +34,7 @@ public sealed class IndexSectionHeightTests
         [Stg(Stage.Embed, pending: pending, done: embedDone, failed: failed, outdated: outdated), Stg(Stage.Ocr, pending: pending, done: vlmDone, failed: failed, outdated: outdated), Stg(Stage.Caption, pending: pending, done: vlmDone, failed: failed, outdated: outdated)];
 
     private static readonly string LongName = "Screenshot_2026-11-10_synthetic-long-file-name-for-layout-measurement_0000012345678.png";
-    private static readonly string LongReasonA = "モデルのファイルが無い: ViT-SO400M-16-SigLIP2-384__ohanami/model.onnx(探した場所: C:\\Users\\synthetic\\AppData\\Local\\Ohanami\\models\\ViT-SO400M-16-SigLIP2-384__ohanami\\model.onnx)。期待サイズ 1234567890 バイト。";
+    private static readonly string LongReasonA = "モデルのファイルが無い: ViT-SO400M-16-SigLIP2-384__ohanami/model.onnx (探した場所: C:\\Users\\synthetic\\AppData\\Local\\Ohanami\\models\\ViT-SO400M-16-SigLIP2-384__ohanami\\model.onnx)。期待サイズ 1234567890 バイト。";
     private static readonly string LongReasonB = "llama-server が 3 枚続けて異常になった。GPU が他で使われているか、ドライバの問題かもしれない(場所: C:\\Users\\synthetic\\AppData\\Local\\Ohanami\\runtime\\llama.cpp\\b12110)。";
 
     /// <summary>テキスト検索のモデルのファイルが無いことを、Core が伝えている形(足りないファイルの名前は作った名前)。</summary>
