@@ -16,6 +16,7 @@ namespace Ohanami.RemoveData.Tests;
 internal sealed record DataRootLayout(
     string Root,
     IReadOnlyList<string> ModelFiles,
+    IReadOnlyList<string> ThumbnailFiles,
     IReadOnlyList<string> OtherFiles)
 {
     public const string Hex32 = "0123456789abcdef0123456789abcdef";
@@ -27,11 +28,15 @@ internal sealed record DataRootLayout(
 
     public string DatabasePath => Path.Combine(Root, "ohanami.db");
 
-    public IEnumerable<string> AllFiles => ModelFiles.Concat(OtherFiles);
+    /// <summary>「モデルのファイルとサムネイル」が消す物(モデルのファイル・取りかけの .part・サムネイル・サムネイルの一時ファイル)。</summary>
+    public IEnumerable<string> ModelsAndThumbnailFiles => ModelFiles.Concat(ThumbnailFiles);
+
+    public IEnumerable<string> AllFiles => ModelFiles.Concat(ThumbnailFiles).Concat(OtherFiles);
 
     public static DataRootLayout CreateFull(string root)
     {
         var models = new List<string>();
+        var thumbnails = new List<string>();
         var others = new List<string>();
 
         string embedding = Path.Combine(root, "models", OhanamiCore.ModelDirectoryName);
@@ -49,11 +54,11 @@ internal sealed record DataRootLayout(
         others.Add(Path.Combine(root, "logs", "ohanami-20261120.log"));
         others.Add(Path.Combine(root, "logs", "llama-server-20261120-010203-004.log"));
         string thumbDir = Path.Combine(root, "thumbs", "v1", "ab");
-        others.Add(Path.Combine(thumbDir, Hex64 + "_320x180.jpg"));
-        others.Add(Path.Combine(thumbDir, Hex64 + "_160x90.jpg." + Hex32 + ".tmp"));
+        thumbnails.Add(Path.Combine(thumbDir, Hex64 + "_320x180.jpg"));
+        thumbnails.Add(Path.Combine(thumbDir, Hex64 + "_160x90.jpg." + Hex32 + ".tmp"));
 
-        foreach (string path in models.Concat(others)) WriteFile(path);
-        return new DataRootLayout(root, models, others);
+        foreach (string path in models.Concat(thumbnails).Concat(others)) WriteFile(path);
+        return new DataRootLayout(root, models, thumbnails, others);
     }
 
     // モデルのファイルと、取りかけの .part の両方

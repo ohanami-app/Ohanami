@@ -21,23 +21,58 @@ public sealed class RemoveDataRunTests
         ScriptEntrance.RunScript(area.AppFolder, args, env);
 
     [Fact]
-    public void Models_mode_removes_the_model_files_and_part_files_and_leaves_everything_else_untouched()
+    public void Models_and_thumbnails_mode_removes_the_model_files_part_files_and_thumbnails_and_leaves_everything_else_untouched()
     {
         using TempArea area = TempArea.Create();
         string root = area.Combine("data");
         DataRootLayout layout = DataRootLayout.CreateFull(root);
         Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
 
-        ScriptResult r = Run(area, Args(root, "-Mode", "Models", "-Yes"));
+        ScriptResult r = Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes"));
 
         Assert.Equal(0, r.ExitCode);
         Dictionary<string, string> after = DataRootLayout.SnapshotFiles(root);
-        foreach (string model in layout.ModelFiles) Assert.False(File.Exists(model), model);
+        foreach (string gone in layout.ModelsAndThumbnailFiles) Assert.False(File.Exists(gone), gone);
         foreach (string other in layout.OtherFiles) Assert.True(File.Exists(other), other);
-        // DB・バックアップ・pid・ログ・サムネイルは、バイト単位で同じ
-        Dictionary<string, string> expected = before.Where(kv => !layout.ModelFiles.Contains(Path.Combine(root, kv.Key))).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        // サムネイルの枝のフォルダは、空になるので消える。根と、ログのフォルダは残る
+        Assert.False(Directory.Exists(Path.Combine(root, "thumbs")));
+        Assert.False(Directory.Exists(Path.Combine(root, "models")));
+        Assert.True(Directory.Exists(Path.Combine(root, "logs")));
+        // DB(-wal・-shm を含む)・バックアップ・pid・ログは、バイト単位で同じ
+        Dictionary<string, string> expected = before.Where(kv => !layout.ModelsAndThumbnailFiles.Contains(Path.Combine(root, kv.Key))).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         Assert.Equal(expected.OrderBy(kv => kv.Key), after.OrderBy(kv => kv.Key));
         Assert.True(Directory.Exists(root));
+    }
+
+    [Fact]
+    public void Models_and_thumbnails_mode_reports_that_thumbnails_are_rebuilt_and_the_all_mode_does_not_say_so()
+    {
+        using TempArea area = TempArea.Create();
+        string root = area.Combine("data");
+        DataRootLayout.CreateFull(root);
+
+        ScriptResult light = Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes"));
+        Assert.Equal(0, light.ExitCode);
+        Assert.Contains("サムネイルは、次に一覧や詳細を表示したときに作り直されます。", light.Output, StringComparison.Ordinal);
+
+        DataRootLayout.CreateFull(root);
+        ScriptResult all = Run(area, Args(root, "-Mode", "All", "-Yes"));
+        Assert.Equal(0, all.ExitCode);
+        Assert.DoesNotContain("作り直されます", all.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_old_mode_name_Models_is_not_accepted_and_nothing_is_removed()
+    {
+        using TempArea area = TempArea.Create();
+        string root = area.Combine("data");
+        DataRootLayout.CreateFull(root);
+        Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
+
+        ScriptResult r = Run(area, Args(root, "-Mode", "Models", "-Yes"));
+
+        Assert.Equal(1, r.ExitCode);
+        Assert.Equal(before.OrderBy(kv => kv.Key), DataRootLayout.SnapshotFiles(root).OrderBy(kv => kv.Key));
     }
 
     [Fact]
@@ -47,7 +82,7 @@ public sealed class RemoveDataRunTests
         string root = area.Combine("data");
         DataRootLayout.CreateFull(root);
 
-        Assert.Equal(0, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+        Assert.Equal(0, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
         Assert.True(Directory.Exists(root));
         Assert.Equal(0, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
 
@@ -128,7 +163,7 @@ public sealed class RemoveDataRunTests
         foreach (string e in extra) DataRootLayout.WriteFile(e);
         string part = layout.ModelFiles.First(f => f.EndsWith(".part", StringComparison.Ordinal));
         string pidTmp = layout.OtherFiles.First(f => f.EndsWith(".tmp", StringComparison.Ordinal) && Path.GetFileName(f).StartsWith("llama-server.pid.", StringComparison.Ordinal));
-        string thumbTmp = layout.OtherFiles.First(f => f.EndsWith(".tmp", StringComparison.Ordinal) && Path.GetFileName(f).Contains(".jpg.", StringComparison.Ordinal));
+        string thumbTmp = layout.ThumbnailFiles.First(f => f.EndsWith(".tmp", StringComparison.Ordinal) && Path.GetFileName(f).Contains(".jpg.", StringComparison.Ordinal));
 
         ScriptResult r = Run(area, Args(root, "-Mode", "All", "-Yes"));
 

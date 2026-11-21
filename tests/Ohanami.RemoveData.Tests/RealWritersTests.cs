@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -28,6 +29,35 @@ public sealed class RealWritersTests
     public async Task A_data_folder_made_by_the_apps_own_writers_is_removed_completely()
     {
         using TempArea area = TempArea.Create();
+        (string root, _) = await BuildRootWithRealWritersAsync(area);
+
+        ScriptResult r = ScriptEntrance.RunScript(area.AppFolder, ["-DataRoot", root, "-Mode", "All", "-Yes"]);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.False(Directory.Exists(root));
+    }
+
+    [Fact]
+    public async Task The_models_and_thumbnails_mode_removes_the_real_thumbnails_and_part_files_and_leaves_the_database_and_logs()
+    {
+        using TempArea area = TempArea.Create();
+        (string root, string partDestination) = await BuildRootWithRealWritersAsync(area);
+        Dictionary<string, string> before = DataRootLayout.SnapshotFiles(root);
+
+        ScriptResult r = ScriptEntrance.RunScript(area.AppFolder, ["-DataRoot", root, "-Mode", "ModelsAndThumbnails", "-Yes"]);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.False(File.Exists(partDestination + ".part"));
+        Assert.False(Directory.Exists(Path.Combine(root, "thumbs")));                        // 本物の書き手が作ったサムネイルが、フォルダごと無い
+        Dictionary<string, string> expected = before
+            .Where(kv => !kv.Key.StartsWith("thumbs" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && !kv.Key.EndsWith(".part", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(expected.OrderBy(kv => kv.Key), DataRootLayout.SnapshotFiles(root).OrderBy(kv => kv.Key));   // データベース・バックアップ・pid・ログは、バイト単位で同じ
+    }
+
+    // アプリの本物の書き手で、根を作る(データベース・移行前のバックアップ・サムネイル・診断ログ・取りかけのモデル)。名前で置く物も足す
+    private static async Task<(string Root, string PartDestination)> BuildRootWithRealWritersAsync(TempArea area)
+    {
         string root = area.Combine("data");
         string embeddingDirectory = Path.Combine(root, "models", OhanamiCore.ModelDirectoryName);
         Directory.CreateDirectory(root);
@@ -64,11 +94,7 @@ public sealed class RealWritersTests
         Assert.NotEmpty(Directory.GetFiles(Path.Combine(root, "thumbs"), "*.jpg", SearchOption.AllDirectories));
         Assert.NotEmpty(Directory.GetFiles(Path.Combine(root, "logs"), "ohanami-*.log"));
         Assert.True(File.Exists(partDestination + ".part"));
-
-        ScriptResult r = ScriptEntrance.RunScript(area.AppFolder, ["-DataRoot", root, "-Mode", "All", "-Yes"]);
-
-        Assert.Equal(0, r.ExitCode);
-        Assert.False(Directory.Exists(root));
+        return (root, partDestination);
     }
 
     // ---------------------------------------------------------------- 偽のサーバー(ネットワークには出ない)

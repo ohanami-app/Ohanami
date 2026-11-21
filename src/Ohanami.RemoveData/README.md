@@ -6,7 +6,7 @@ Ohanami が PC に残したデータ(データベース・インデックス・�
 - `Ohanami-RemoveData.ps1` — 本体。Windows PowerShell 5.1 で動く(PowerShell 7 は要らない)。
 - 配布の zip の、アプリの exe と同じフォルダに入る(`build/OhanamiPublish.targets`、`tools/release/allowed-files.tsv`)。C# のプロジェクトではない。ソリューションにも、ビルドの対象としては入っていない。
 
-消す物の一覧(名前・型・どの書き手が書くか)と、決めた理由は、ADR 0052 にある。道具の名前と型の表は `.ps1` の先頭近くにあり、アプリが書く物を変えたら、その表と ADR を直す。
+消し方は 2 つ(`-Mode ModelsAndThumbnails`: モデルのファイルとサムネイル。どちらも作り直せる物なので、確認を聞かずに消す。`-Mode All`: データのすべて)。消す物の一覧(名前・型・どの書き手が書くか)と、決めた理由は、ADR 0052 にある。道具の名前と型の表は `.ps1` の先頭近くにあり、アプリが書く物を変えたら、その表と ADR を直す。
 
 ## ここで二重クリックしない
 
@@ -44,7 +44,7 @@ dotnet test --project tests/Ohanami.RemoveData.Tests
 ```
 
 - `RemoveDataRunTests` — `.ps1` を、Windows PowerShell 5.1 で実際に動かす。終了コードと、ファイルが残ったか消えたかで判定する(日本語の画面の文言では判定しない)。リンク(junction)・DB が開かれている・アプリが動いている(名前付き Mutex)・標準入力が閉じている・日本語と空白の入った根・`.cmd` 経由、などを含む。
-- `RealWritersTests` — アプリの本物の書き手(`OhanamiDatabase`・`ThumbnailService`・`FileCoreLog`・`ModelDownloader`)で作った根を、`-Mode All -Yes` で消して、根が無くなることを確かめる。道具の名前の表が、アプリの実際の名前とずれていれば、ここで落ちる。
+- `RealWritersTests` — アプリの本物の書き手(`OhanamiDatabase`・`ThumbnailService`・`FileCoreLog`・`ModelDownloader`)で作った根を、`-Mode All -Yes` で消して、根が無くなることを確かめる。`-Mode ModelsAndThumbnails -Yes` では、本物のサムネイルと取りかけの `.part` だけが消え、DB・バックアップ・ログがバイト単位で同じままであることも確かめる。道具の名前の表が、アプリの実際の名前とずれていれば、ここで落ちる。
 - `SourceGuardTests` — ソースを読んで見張る。BOM・`.cmd` の中身・使わない言葉(再帰の削除・文字列の実行・ほかのプロセスの起動・ファイルやフォルダの作成/書き込み/移動/コピー(コマンドレット・別名・.NET の File/Directory/ストリームの書く側)・リダイレクト `>` `>>`・設定の変更・ネットワーク。コメントも数える。変数に入れた型のメソッドや、文字列の組み立てで作った名前は見張らない)・削除の呼び出しが「引数が変数 1 つの `File.Delete`・`Directory.Delete`」の形だけであること・BOM が二重でないこと・既定の根の決め方・環境変数名・モデルのフォルダとファイル名が Core の定数と一致すること・プロセスの起動が入口の 1 ファイルだけであること。
 - `RemoveDataSafetyTests` — 標準入力に流した行での対話(全角を含む)・ドライブ直下と `\\?\` の根の拒否・アプリが動いている場合の検出(根の大文字小文字・末尾の区切りの違い、DB・`-wal`・`-shm` が開かれている場合の受け皿)・読めないフォルダ(`icacls` で、一時フォルダの中だけに作り、終わったら外す)・空のフォルダだけが残る場合・根が junction の場合。
 - `EntranceRulesTests` — 入口の守りそのものを確かめる。引数は、決めた綴りだけ通す(略称・コロンの形・位置引数・重複は、動かさずに例外にする)。
