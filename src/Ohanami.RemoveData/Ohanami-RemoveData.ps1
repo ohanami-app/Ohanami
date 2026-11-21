@@ -372,7 +372,7 @@ try {
     }
     $script:RootPath = $fullRoot.TrimEnd('\', '/')
 
-    Write-Host ('データの場所: ' + $script:RootPath + '(' + $how + ')')
+    Write-Host ('データの場所: ' + $script:RootPath + ' (' + $how + ')')
     if (-not [System.IO.Directory]::Exists($script:RootPath)) {
         Write-Host '消す物はありません (データの場所がありません)。'
         exit 0
@@ -389,7 +389,7 @@ try {
     $thumbTotal = Get-Total $thumbFiles
     $lightTotal = Get-Total ($modelFiles + $partFiles + $thumbFiles)
     $indexTotal = Get-Total $indexFiles
-    $kept = @($inv.Unknown) + @($inv.Links | ForEach-Object { $_ + '(リンク)' })
+    $kept = @($inv.Unknown) + @($inv.Links | ForEach-Object { $_ + ' (リンク)' })
 
     Write-Host ''
     Write-Host '「モデルのファイルとサムネイル」と「すべて」が消す物:'
@@ -401,7 +401,7 @@ try {
     Write-Host ''
     Write-Host '消さない物:'
     Write-Host '  - 登録したスクリーンショットのフォルダ (中の画像)'
-    Write-Host ('  - アプリのフォルダ: ' + $PSScriptRoot + '(不要なら、手で消してください)')
+    Write-Host ('  - アプリのフォルダ: ' + $PSScriptRoot + ' (不要なら、手で消してください)')
     Write-Host '  - アプリのフォルダの近くの models フォルダなど、データの場所の外に置いたモデル'
     $modelsOverride = [Environment]::GetEnvironmentVariable($ModelsDirectoryVariable)
     if (-not [string]::IsNullOrEmpty($modelsOverride)) {
