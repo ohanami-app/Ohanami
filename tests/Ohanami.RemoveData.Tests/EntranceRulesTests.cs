@@ -25,7 +25,7 @@ public sealed class EntranceRulesTests
         Refused("-DataRoot", Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\Ohanami", "-Mode", "All", "-Yes");
 
     [Fact]
-    public void A_delete_mode_whose_data_root_is_relative_is_refused() => Refused("-DataRoot", @"relative\data", "-Mode", "Models", "-Yes");
+    public void A_delete_mode_whose_data_root_is_relative_is_refused() => Refused("-DataRoot", @"relative\data", "-Mode", "ModelsAndThumbnails", "-Yes");
 
     [Fact]
     public void A_run_without_a_data_root_must_be_list_only() => Refused("-Yes");

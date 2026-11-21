@@ -3,7 +3,7 @@
   Ohanami が PC に残したデータを消す。
 
 .DESCRIPTION
-  データの場所(根)の下にある、Ohanami が書いた物だけを消す。消す物の一覧と大きさを見せてから、「モデルのファイルだけ」か「すべて」かを聞く。
+  データの場所(根)の下にある、Ohanami が書いた物だけを消す。消す物の一覧と大きさを見せてから、「モデルのファイルとサムネイル」か「すべて」かを聞く。
   - 消すのは、名前か型を知っている物だけ。知らない物は残して、最後に報告する。
   - 根の外(アプリのフォルダ・根の外に置いたモデル・スクリーンショットのフォルダ)には触れない。
   - 再帰の削除は使わない。ファイルは 1 つずつ、フォルダは空になったときだけ消す。
@@ -15,7 +15,7 @@
   3 = 利用者がやめた(入力が閉じた場合を含む)/ 4 = 消せなかった物がある、または調べられなかった所がある(消す物が 0 でも)/ 5 = 想定外のエラー
 
 .PARAMETER Mode
-  Models = モデルのファイルだけ。All = モデルのファイル・インデックス・手動タグ・サムネイル・ログのすべて。省くと、一覧を見せて聞く。
+  ModelsAndThumbnails = モデルのファイルとサムネイル(どちらも、作り直せる物)。All = モデルのファイル・サムネイル・インデックス・手動タグ・ログのすべて。省くと、一覧を見せて聞く。
 
 .PARAMETER Yes
   最後の確かめを省く。-Mode と一緒のときだけ使える。
@@ -28,7 +28,7 @@
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [ValidateSet('Models', 'All')]
+    [ValidateSet('ModelsAndThumbnails', 'All')]
     [string]$Mode,
     [switch]$Yes,
     [switch]$ListOnly,
@@ -51,7 +51,8 @@ $EmbeddingFiles = @('visual/model.onnx', 'textual/model.onnx', 'textual/model.on
 $VlmDirectoryName = 'Qwen3-VL-8B-Instruct-GGUF'
 $VlmFiles = @('Qwen3VL-8B-Instruct-Q4_K_M.gguf', 'mmproj-Qwen3VL-8B-Instruct-F16.gguf')
 
-# 集めた物の置き場: Models = モデルのファイル(取りかけの .part を含む)、Db = データベースの組、Index = そのほかのアプリの書いた物
+# 集めた物の置き場: Models = モデルのファイル(取りかけの .part を含む)、Thumbs = サムネイル(取りかけの .tmp を含む)、Db = データベースの組、Index = そのほかのアプリの書いた物。
+# フォルダの置き場(Scope)も、同じ名前を使う(Root = 根そのもの)
 function New-Spec([string]$scope) {
     return @{
         Scope = $scope
@@ -99,11 +100,11 @@ $specLogs = New-Spec 'Index'
 Add-FileRule $specLogs '^ohanami-[0-9]{8}\.log$' 'Index'
 Add-FileRule $specLogs '^llama-server-[0-9]{8}-[0-9]{6}-[0-9]{3}\.log$' 'Index'
 
-$specThumbLeaf = New-Spec 'Index'
-Add-FileRule $specThumbLeaf '^[0-9a-f]{64}_[0-9]+x[0-9]+\.jpg(\.[0-9a-f]{32}\.tmp)?$' 'Index'
-$specThumbVersion = New-Spec 'Index'
+$specThumbLeaf = New-Spec 'Thumbs'
+Add-FileRule $specThumbLeaf '^[0-9a-f]{64}_[0-9]+x[0-9]+\.jpg(\.[0-9a-f]{32}\.tmp)?$' 'Thumbs'
+$specThumbVersion = New-Spec 'Thumbs'
 Add-DirRule $specThumbVersion '^[0-9a-f]{2}$' $specThumbLeaf
-$specThumbs = New-Spec 'Index'
+$specThumbs = New-Spec 'Thumbs'
 Add-DirRule $specThumbs '^v[0-9]+$' $specThumbVersion
 
 $specRoot = New-Spec 'Root'
@@ -336,7 +337,7 @@ function Get-DbFilesInOrder($inv) {
 # ---- 本体
 try {
     if ($Yes -and -not $PSBoundParameters.ContainsKey('Mode')) {
-        Write-Host '-Yes は、-Mode Models または -Mode All と一緒に使います。何も消さずに終わります。'
+        Write-Host '-Yes は、-Mode ModelsAndThumbnails または -Mode All と一緒に使います。何も消さずに終わります。'
         exit 2
     }
 
@@ -381,16 +382,22 @@ try {
     $inv = Get-Inventory $script:RootPath
     $modelFiles = @($inv.Files | Where-Object { $_.Group -eq 'Models' -and -not $_.IsPart })
     $partFiles = @($inv.Files | Where-Object { $_.Group -eq 'Models' -and $_.IsPart })
-    $indexFiles = @($inv.Files | Where-Object { $_.Group -ne 'Models' })
+    $thumbFiles = @($inv.Files | Where-Object { $_.Group -eq 'Thumbs' })
+    $indexFiles = @($inv.Files | Where-Object { $_.Group -eq 'Db' -or $_.Group -eq 'Index' })
     $modelTotal = Get-Total ($modelFiles + $partFiles)
     $partTotal = Get-Total $partFiles
+    $thumbTotal = Get-Total $thumbFiles
+    $lightTotal = Get-Total ($modelFiles + $partFiles + $thumbFiles)
     $indexTotal = Get-Total $indexFiles
     $kept = @($inv.Unknown) + @($inv.Links | ForEach-Object { $_ + '(リンク)' })
 
     Write-Host ''
-    Write-Host ('[1] モデルのファイル: {0} ファイル、{1}' -f $modelTotal.Count, (Format-Size $modelTotal.Bytes))
+    Write-Host '「モデルのファイルとサムネイル」と「すべて」が消す物:'
+    Write-Host ('  モデルのファイル: {0} ファイル、{1}' -f $modelTotal.Count, (Format-Size $modelTotal.Bytes))
     if ($partTotal.Count -gt 0) { Write-Host ('    うち取りかけ (.part): {0} ファイル、{1}' -f $partTotal.Count, (Format-Size $partTotal.Bytes)) }
-    Write-Host ('[2] インデックス・手動タグ・サムネイル・ログ: {0} ファイル、{1}' -f $indexTotal.Count, (Format-Size $indexTotal.Bytes))
+    Write-Host ('  サムネイル: {0} ファイル、{1}' -f $thumbTotal.Count, (Format-Size $thumbTotal.Bytes))
+    Write-Host '「すべて」だけが消す物:'
+    Write-Host ('  インデックス・手動タグ・ログ: {0} ファイル、{1}' -f $indexTotal.Count, (Format-Size $indexTotal.Bytes))
     Write-Host ''
     Write-Host '消さない物:'
     Write-Host '  - 登録したスクリーンショットのフォルダ(中の画像)'
@@ -430,20 +437,20 @@ try {
     if (-not $PSBoundParameters.ContainsKey('Mode')) {
         Write-Host ''
         Write-Host '消す物を選んでください。'
-        Write-Host ('  1  モデルのファイルだけ(約 ' + (Format-Size $modelTotal.Bytes) + ')')
-        Write-Host '  2  すべて(モデルのファイル・インデックス・手動タグ・サムネイル・ログ)'
+        Write-Host ('  1  モデルのファイルとサムネイル(約 ' + (Format-Size $lightTotal.Bytes) + ')')
+        Write-Host '  2  すべて(モデルのファイル・サムネイル・インデックス・手動タグ・ログ)'
         Write-Host 'それ以外を入力すると、何も消さずに終わります。'
         $answer = Read-Host '番号'
         if ($null -eq $answer) { Write-Host '入力がないので、何も消さずに終わります。'; exit 3 }
         $answer = $answer.Trim().Normalize([System.Text.NormalizationForm]::FormKC).ToLowerInvariant()
-        if ($answer -eq '1') { $Mode = 'Models' }
+        if ($answer -eq '1') { $Mode = 'ModelsAndThumbnails' }
         elseif ($answer -eq '2') { $Mode = 'All' }
         else { Write-Host '何も消さずに終わります。'; exit 3 }
         $chosenByAnswer = $true
     }
-    $targets = @(if ($Mode -eq 'Models') { $modelFiles + $partFiles } else { $inv.Files.ToArray() })
+    $targets = @(if ($Mode -eq 'ModelsAndThumbnails') { $modelFiles + $partFiles + $thumbFiles } else { $inv.Files.ToArray() })
     # 消し終わると空になる既知のフォルダ(と、All のときの根)も、消す物に数える
-    $dirScopes = @(if ($Mode -eq 'All') { 'Models'; 'Index' } else { 'Models' })
+    $dirScopes = @(if ($Mode -eq 'All') { 'Models'; 'Thumbs'; 'Index' } else { 'Models'; 'Thumbs' })
     $emptiedDirs = @(Get-EmptiedDirs $inv $dirScopes (($Mode -eq 'All') -and (-not $rootIsLink)) $targets)
     # 根そのもの(Root の型)が読めなかったときも、どちらのモードでも、調べ残しとして数える
     $checkedScopes = $dirScopes + @('Root')
@@ -471,8 +478,11 @@ try {
                     Write-Host '  - インデックス(作り直しの目安: 1 万枚で約 36 時間。開発機で測った値で、PC によって変わります)'
                     Write-Host '  - 手動タグ(作り直せません)'
                 }
-                if (@($targets | Where-Object { $_.Group -ne 'Db' -and $_.Group -ne 'Models' }).Count -gt 0) {
-                    Write-Host '  - サムネイル・ログなど、Ohanami が作ったファイル'
+                if (@($targets | Where-Object { $_.Group -eq 'Index' }).Count -gt 0) {
+                    Write-Host '  - ログなど、Ohanami が作ったファイル'
+                }
+                if (@($targets | Where-Object { $_.Group -eq 'Thumbs' }).Count -gt 0) {
+                    Write-Host '  - サムネイル'
                 }
                 if (@($targets | Where-Object { $_.Group -eq 'Models' }).Count -gt 0) {
                     Write-Host '  - モデルのファイル'
@@ -482,7 +492,7 @@ try {
                 }
             }
             else {
-                Write-Host 'モデルのファイルを消します。'
+                Write-Host 'モデルのファイルとサムネイルを消します。'
             }
             Write-Host '元に戻せません。'
             $confirm = Read-Host '消してよければ y を入力してください'
@@ -514,11 +524,14 @@ try {
             if (-not (Remove-DataFile $item $result)) { $stopped = $true; break }
         }
         if (-not $stopped) {
-            foreach ($item in @($inv.Files | Where-Object { $_.Group -eq 'Index' })) { [void](Remove-DataFile $item $result) }
+            foreach ($item in @($inv.Files | Where-Object { $_.Group -eq 'Index' -or $_.Group -eq 'Thumbs' })) { [void](Remove-DataFile $item $result) }
         }
     }
     if (-not $stopped -and -not $skipDeletion) {
         foreach ($item in @($modelFiles + $partFiles)) { [void](Remove-DataFile $item $result) }
+        if ($Mode -eq 'ModelsAndThumbnails') {
+            foreach ($item in $thumbFiles) { [void](Remove-DataFile $item $result) }
+        }
         Remove-EmptyDirs $inv $dirScopes
     }
 
@@ -532,9 +545,13 @@ try {
 
     # ---- 報告
     $deletedModels = Get-Total @($result.Deleted | Where-Object { $_.Group -eq 'Models' })
-    $deletedIndex = Get-Total @($result.Deleted | Where-Object { $_.Group -ne 'Models' })
+    $deletedThumbs = Get-Total @($result.Deleted | Where-Object { $_.Group -eq 'Thumbs' })
+    $deletedIndex = Get-Total @($result.Deleted | Where-Object { $_.Group -ne 'Models' -and $_.Group -ne 'Thumbs' })
     Write-Host ''
-    Write-Host ('消しました: モデルのファイル {0} ファイル({1})、そのほか {2} ファイル({3})' -f $deletedModels.Count, (Format-Size $deletedModels.Bytes), $deletedIndex.Count, (Format-Size $deletedIndex.Bytes))
+    $reportLine = ('消しました: モデルのファイル {0} ファイル({1})、サムネイル {2} ファイル({3})' -f $deletedModels.Count, (Format-Size $deletedModels.Bytes), $deletedThumbs.Count, (Format-Size $deletedThumbs.Bytes))
+    if ($Mode -eq 'All') { $reportLine += ('、そのほか {0} ファイル({1})' -f $deletedIndex.Count, (Format-Size $deletedIndex.Bytes)) }
+    Write-Host $reportLine
+    if ($Mode -eq 'ModelsAndThumbnails' -and -not $skipDeletion) { Write-Host 'サムネイルは、次に一覧や詳細を表示したときに作り直されます。' }
     $failedLines = @($result.Failed | ForEach-Object { $_.Path + ' - ' + $_.Reason })
     if ($failedLines.Count -gt 0) {
         Write-Host ('消せなかった物: {0} 個' -f $failedLines.Count)

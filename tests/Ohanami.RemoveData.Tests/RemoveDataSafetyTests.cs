@@ -26,13 +26,13 @@ public sealed class RemoveDataSafetyTests
     // 全角の数字と文字は、標準入力を UTF-8 で読む .ps1 の側(Console.InputEncoding)で、半角に直して読む。
     // 子プロセスの標準入力は、入口が UTF-8 で書く(ScriptEntrance)。
     [Theory]
-    [InlineData("1", "Models")]
+    [InlineData("1", "ModelsAndThumbnails")]
     [InlineData("2|y", "All")]
     [InlineData("2|n", "Nothing")]
     [InlineData("2", "Nothing")]                // 「y」を答える前に、入力が閉じる
     [InlineData("", "Nothing")]                 // 空の行
     [InlineData("3", "Nothing")]                // 知らない番号
-    [InlineData("１", "Models")]                // 全角の 1
+    [InlineData("１", "ModelsAndThumbnails")]                // 全角の 1
     [InlineData("２|ｙ", "All")]                // 全角の 2 と y
     [InlineData("２|Ｙ", "All")]                // 全角の大文字の Y
     [InlineData("  2  | Y ", "All")]            // 前後の空白と大文字
@@ -47,9 +47,9 @@ public sealed class RemoveDataSafetyTests
 
         switch (expected)
         {
-            case "Models":
+            case "ModelsAndThumbnails":
                 Assert.Equal(0, r.ExitCode);
-                foreach (string model in layout.ModelFiles) Assert.False(File.Exists(model), model);
+                foreach (string gone in layout.ModelsAndThumbnailFiles) Assert.False(File.Exists(gone), gone);
                 foreach (string other in layout.OtherFiles) Assert.True(File.Exists(other), other);
                 break;
             case "All":
@@ -108,11 +108,11 @@ public sealed class RemoveDataSafetyTests
         {
             Assert.True(instance.IsOwner);
             Assert.Equal(2, Run(area, Args(slashed, "-Mode", "All", "-Yes")).ExitCode);
-            Assert.Equal(2, Run(area, Args(slashed + "/", "-Mode", "Models", "-Yes")).ExitCode);
+            Assert.Equal(2, Run(area, Args(slashed + "/", "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
         }
         AssertUntouched(root, before);
 
-        Assert.Equal(0, Run(area, Args(slashed, "-Mode", "Models", "-Yes")).ExitCode);
+        Assert.Equal(0, Run(area, Args(slashed, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
         foreach (string model in layout.ModelFiles) Assert.False(File.Exists(model), model);
         Assert.True(File.Exists(layout.DatabasePath));
         Assert.Equal(0, Run(area, Args(slashed, "-Mode", "All", "-Yes")).ExitCode);
@@ -134,7 +134,7 @@ public sealed class RemoveDataSafetyTests
         foreach (string spelling in new[] { root.ToUpperInvariant(), root.ToLowerInvariant(), root + @"\", root + @"\\", root + @"\.", Path.Combine(root, "..", "data") })
         {
             Assert.Equal(2, Run(area, Args(spelling, "-Mode", "All", "-Yes")).ExitCode);
-            Assert.Equal(2, Run(area, Args(spelling, "-Mode", "Models", "-Yes")).ExitCode);
+            Assert.Equal(2, Run(area, Args(spelling, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
         }
 
         AssertUntouched(root, before);
@@ -142,7 +142,7 @@ public sealed class RemoveDataSafetyTests
 
     // Mutex の名前に頼らない受け皿: データベースのファイルが開かれていれば、どのモードでも、何も消さずに止まる
     [Fact]
-    public void In_the_models_mode_a_database_held_open_stops_the_run_before_any_model_is_removed()
+    public void In_the_models_and_thumbnails_mode_a_database_held_open_stops_the_run_before_any_file_is_removed()
     {
         using TempArea area = TempArea.Create();
         string root = area.Combine("data");
@@ -151,7 +151,7 @@ public sealed class RemoveDataSafetyTests
 
         using (new FileStream(layout.DatabasePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))   // SQLite の開き方と同じ(共有あり)
         {
-            Assert.Equal(2, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+            Assert.Equal(2, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
             Assert.Equal(2, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
         }
 
@@ -195,7 +195,7 @@ public sealed class RemoveDataSafetyTests
         try
         {
             Assert.Equal(2, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
-            Assert.Equal(2, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);   // モデルだけの削除でも、組を確かめてから始める
+            Assert.Equal(2, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);   // モデルとサムネイルだけの削除でも、組を確かめてから始める
 
             Assert.True(File.Exists(Path.Combine(root, "ohanami.db")));                    // 本体が残る
             AssertUntouched(root, before);                                                  // -wal・-shm・モデル・サムネイル・ログも、何も消えていない
@@ -248,7 +248,7 @@ public sealed class RemoveDataSafetyTests
         {
             AssertListingIsDenied(models);
             Assert.Equal(0, Run(area, [.. Args(root), "-ListOnly"]).ExitCode);              // 一覧は、調べられなかったことを書いて 0
-            Assert.Equal(4, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+            Assert.Equal(4, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
             Assert.Equal(4, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
         }
 
@@ -265,11 +265,31 @@ public sealed class RemoveDataSafetyTests
         using (ScriptEntrance.DenyListing(root))
         {
             AssertListingIsDenied(root);
-            Assert.Equal(4, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+            Assert.Equal(4, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
             Assert.Equal(4, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
         }
 
         foreach (string f in layout.AllFiles) Assert.True(File.Exists(f), f);               // 何も消えていない
+    }
+
+    [Fact]
+    public void An_unreadable_thumbnail_folder_does_not_stop_the_models_from_being_removed_in_the_models_and_thumbnails_mode_and_the_run_ends_with_4()
+    {
+        using TempArea area = TempArea.Create();
+        string root = area.Combine("data");
+        DataRootLayout layout = DataRootLayout.CreateFull(root);
+        string thumbs = Path.Combine(root, "thumbs");
+
+        using (ScriptEntrance.DenyListing(thumbs))
+        {
+            AssertListingIsDenied(thumbs);
+            Assert.Equal(4, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
+
+            foreach (string f in layout.ModelFiles) Assert.False(File.Exists(f), f);
+            foreach (string f in layout.OtherFiles) Assert.True(File.Exists(f), f);        // DB・バックアップ・pid・ログは、触れていない
+        }
+        Assert.True(Directory.Exists(thumbs));
+        Assert.True(File.Exists(layout.DatabasePath));
     }
 
     [Fact]
@@ -310,28 +330,30 @@ public sealed class RemoveDataSafetyTests
     }
 
     [Fact]
-    public void Empty_model_folders_alone_are_removed_by_the_models_mode_and_the_data_folder_stays()
+    public void Empty_model_and_thumbnail_folders_alone_are_removed_by_the_models_and_thumbnails_mode_and_the_data_folder_stays()
     {
         using TempArea area = TempArea.Create();
         string root = area.Combine("data");
         DataRootLayout layout = DataRootLayout.CreateFull(root);
-        Assert.Equal(0, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+        Assert.Equal(0, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
         Directory.CreateDirectory(Path.Combine(layout.EmbeddingDirectory, "visual"));
+        Directory.CreateDirectory(Path.Combine(root, "thumbs", "v1", "ab"));
 
-        Assert.Equal(0, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+        Assert.Equal(0, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
 
         Assert.False(Directory.Exists(Path.Combine(root, "models")));
+        Assert.False(Directory.Exists(Path.Combine(root, "thumbs")));
         Assert.True(File.Exists(layout.DatabasePath));
     }
 
     [Fact]
-    public void An_empty_data_folder_is_removed_by_the_all_mode_and_left_by_the_models_mode()
+    public void An_empty_data_folder_is_removed_by_the_all_mode_and_left_by_the_models_and_thumbnails_mode()
     {
         using TempArea area = TempArea.Create();
         string root = area.Combine("data");
         Directory.CreateDirectory(root);
 
-        Assert.Equal(0, Run(area, Args(root, "-Mode", "Models", "-Yes")).ExitCode);
+        Assert.Equal(0, Run(area, Args(root, "-Mode", "ModelsAndThumbnails", "-Yes")).ExitCode);
         Assert.True(Directory.Exists(root));
         Assert.Equal(0, Run(area, Args(root, "-Mode", "All", "-Yes")).ExitCode);
         Assert.False(Directory.Exists(root));
