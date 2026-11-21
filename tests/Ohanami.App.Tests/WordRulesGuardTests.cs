@@ -440,8 +440,11 @@ public sealed class WordRulesGuardTests
         return found;
     }
 
-    /// <summary>日本語の文字(ひらがな・カタカナ・漢字・長音)の直後の「(」。前に半角の空白が要る(ADR 0038)。</summary>
-    private static readonly Regex JapaneseThenParen = new(@"[\u3040-\u30FF\u3400-\u9FFF\uFF66-\uFF9F]\(", RegexOptions.CultureInvariant);
+    /// <summary>
+    /// 前に半角の空白が無い、半角の「(」(ADR 0038)。前の字が何であっても(日本語・英数字・記号)、空白が要る。
+    /// 例外は、行や文の頭(前の字が無い)・空白の直後・開きの括弧とかぎ括弧(「(」「「」「『」「[」)の直後。
+    /// </summary>
+    private static readonly Regex ParenWithoutSpace = new(@"(?<=[^\s(\u300C\u300E\[])\(", RegexOptions.CultureInvariant);
 
     /// <summary>「だ・である」調の語尾(説明の文は「です・ます」調。ADR 0038)。文の終わり(文末・「。」・改行・「)」・「: 」・「(」の前)にあるものだけ。</summary>
     private static readonly Regex PlainStyleEnding = new(
@@ -454,7 +457,7 @@ public sealed class WordRulesGuardTests
     internal static IEnumerable<string> StyleViolations(string text)
     {
         string withoutPaths = Regex.Replace(text, @"\S+", m => m.Value.Contains('\\') || m.Value.Contains('/') ? "" : m.Value);
-        if (JapaneseThenParen.IsMatch(withoutPaths)) yield return "括弧の前に空白が無い";
+        if (ParenWithoutSpace.IsMatch(withoutPaths)) yield return "括弧の前に空白が無い";
         Match end = PlainStyleEnding.Match(withoutPaths);
         if (end.Success) yield return "です・ます調でない語尾: " + end.Groups[1].Value;
     }
@@ -523,6 +526,20 @@ public sealed class WordRulesGuardTests
 
     [Theory]
     [InlineData("検索準備完了(特徴ベクトル検索の対象 10 枚)", "括弧の前に空白が無い")]
+    [InlineData("検索準備完了 (特徴ベクトル検索の対象 10 枚)", null)]
+    [InlineData("処理プログラム(llama-server)がありません", "括弧の前に空白が無い")]      // 前が英数字でも空ける
+    [InlineData("VLM(説明文)を作ります", "括弧の前に空白が無い")]
+    [InlineData("llama-server(0 件)", "括弧の前に空白が無い")]
+    [InlineData("12 / 30 枚(未作成 18)", "括弧の前に空白が無い")]
+    [InlineData("12 / 30 枚 (未作成 18)", null)]
+    [InlineData("(先頭の括弧)は空けない", null)]                               // 文の頭
+    [InlineData("1 行目\n(2 行目の頭)", null)]                                // 行の頭
+    [InlineData("読み込み 「(」 と [(] と ((二重))", null)]                    // 空白の直後・開きの括弧とかぎ括弧の直後
+    [InlineData("「(」", null)]
+    [InlineData("[(x)]", null)]
+    [InlineData("((x) (y))", null)]
+    [InlineData("1 件(a)", "括弧の前に空白が無い")]
+    [InlineData("(a)(b)", "括弧の前に空白が無い")]                             // 閉じの括弧の直後も空ける
     [InlineData("取り込みを止められなかった", null)]                       // 文の終わりでない(「: 」「。」が続かない)ので、語尾の規則は掛けない
     [InlineData("取り込みを止められない: 理由", "です・ます調でない語尾: られない")]
     [InlineData("起動できなかった。", "です・ます調でない語尾: できなかった")]

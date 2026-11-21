@@ -360,8 +360,8 @@ internal static class DetailPresenter
     internal static string Size(long bytes)
     {
         string exact = string.Create(CultureInfo.InvariantCulture, $"{bytes:N0} バイト");
-        if (bytes >= 1024L * 1024) return string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0 / 1024.0:0.##} MB({exact})");
-        if (bytes >= 1024) return string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0:0.#} KB({exact})");
+        if (bytes >= 1024L * 1024) return string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0 / 1024.0:0.##} MB ({exact})");
+        if (bytes >= 1024) return string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0:0.#} KB ({exact})");
         return exact;
     }
 

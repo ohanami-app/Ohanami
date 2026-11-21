@@ -118,7 +118,7 @@ internal static class ProcessingWords
         IndexRunState.Waiting => "待機中です。新しい画像が来たら、続けてインデックスを作ります",
         IndexRunState.Pausing => "一時停止の途中です。止まるまで待ってください",
         IndexRunState.Paused => "一時停止中です。新しい画像が来ても、再開を押すまでインデックスは作りません",
-        IndexRunState.Failed => "インデックス作成が失敗して止まりました。原因は、下の補足の行(ヒントに全文)で確認できます。開始を押すと、もう一度始めます",
+        IndexRunState.Failed => "インデックス作成が失敗して止まりました。原因は、下の補足の行 (ヒントに全文)で確認できます。開始を押すと、もう一度始めます",
         _ => null,
     };
 

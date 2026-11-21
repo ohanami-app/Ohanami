@@ -127,6 +127,24 @@ public sealed class UiTextTests
         Assert.Equal("特徴ベクトルの読み込みがまだ始まっていません", UiText.Plain("ベクトルの読み込みがまだ始まっていない"));
     }
 
+    // ---------------------------------------------------------------- 括弧の前の空白(ADR 0038)
+
+    [Theory]
+    [InlineData("検索準備完了(特徴ベクトル検索の対象 10 枚)", "検索準備完了 (特徴ベクトル検索の対象 10 枚)")]   // 前が日本語
+    [InlineData("12 MB(12,582,912 バイト)", "12 MB (12,582,912 バイト)")]                                 // 前が英数字
+    [InlineData("ocr(文字)と caption(説明文)", "ocr (文字)と caption (説明文)")]
+    [InlineData("(先頭の括弧)は空けない", "(先頭の括弧)は空けない")]                                       // 文の頭
+    [InlineData("理由 (すでに空白がある)", "理由 (すでに空白がある)")]                                       // 空白の直後
+    [InlineData("「(」と [(x)] と ((二重))", "「(」と [(x)] と ((二重))")]                                   // 開きの括弧・かぎ括弧の直後
+    [InlineData("(a)(b)", "(a) (b)")]                                                                      // 閉じの括弧の直後は空ける
+    [InlineData("1\n2(行ごとに数える)\n(行の頭)", "1\n2 (行ごとに数える)\n(行の頭)")]
+    [InlineData("C:\\shots\\名前(1).png: 読み込めません", "C:\\shots\\名前(1).png: 読み込めません")]         // パスの中は変えない
+    [InlineData("shots/a(1).png", "shots/a(1).png")]
+    public void SpaceBeforeParen_puts_a_space_before_every_half_width_paren_except_in_paths_and_after_a_space_or_an_opening_bracket(string text, string expected)
+    {
+        Assert.Equal(expected, UiText.SpaceBeforeParen(text));
+    }
+
     // ---------------------------------------------------------------- 起動の状態(ステータスバー)
 
     [Fact]

@@ -103,17 +103,20 @@ internal static class UiText
         (new Regex("は実行中" + SentenceEnd, Opts), "は実行中です"),
     ];
 
-    /// <summary>日本語の文字(ひらがな・カタカナ・漢字・長音・踊り字)の直後の「(」。この前に半角の空白を 1 つ入れる(ADR 0038)。</summary>
-    private static readonly Regex JapaneseBeforeParen = new(@"(?<=[\u3040-\u30FF\u3400-\u9FFF\uFF66-\uFF9F])\(", Opts);
+    /// <summary>
+    /// 前に半角の空白が無い、半角の「(」(ADR 0038)。前の字が何であっても(日本語・英数字・記号)、この前に半角の空白を 1 つ入れる。
+    /// 例外は、空白で区切った塊の頭(行や文の頭・空白の直後)と、開きの括弧とかぎ括弧(「(」「「」「『」「[」)の直後。
+    /// </summary>
+    private static readonly Regex ParenWithoutSpace = new(@"(?<=[^\s(\u300C\u300E\[])\(", Opts);
 
     private static readonly Regex NonSpaceRun = new(@"\S+", Opts);
 
     /// <summary>
-    /// 日本語の文字の直後の「(」の前に、半角の空白を 1 つ入れる(「検索準備完了 (…)」)。パスは変えない: 空白で区切った塊が「\」か「/」を含むときは、パスとみなして、そのままにする
+    /// 半角の「(」の前に、半角の空白を 1 つ入れる(「検索準備完了 (…)」「llama-server (…)」)。パスは変えない: 空白で区切った塊が「\」か「/」を含むときは、パスとみなして、そのままにする
     /// (ファイル名の「(」を変えると、コピーしたパスが違ってしまう)。
     /// </summary>
     internal static string SpaceBeforeParen(string text) =>
-        NonSpaceRun.Replace(text, m => m.Value.Contains('\\', StringComparison.Ordinal) || m.Value.Contains('/', StringComparison.Ordinal) ? m.Value : JapaneseBeforeParen.Replace(m.Value, " ("));
+        NonSpaceRun.Replace(text, m => m.Value.Contains('\\', StringComparison.Ordinal) || m.Value.Contains('/', StringComparison.Ordinal) ? m.Value : ParenWithoutSpace.Replace(m.Value, " ("));
 
     /// <summary>画面に出す形にする(null は空の文字列)。</summary>
     public static string Plain(string? message)
