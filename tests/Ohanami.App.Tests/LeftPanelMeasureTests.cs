@@ -39,7 +39,7 @@ public sealed class LeftPanelMeasureTests
     private sealed record Scenario(string Name, IndexState State, int? Missing);
 
     private static readonly string LongName = "Screenshot_2026-11-10_synthetic-long-file-name-for-layout-measurement_0000012345678.png";
-    private static readonly string LongReasonA = "モデルのファイルが無い: ViT-SO400M-16-SigLIP2-384__ohanami/model.onnx(探した場所: C:\\Users\\synthetic\\AppData\\Local\\Ohanami\\models\\ViT-SO400M-16-SigLIP2-384__ohanami\\model.onnx)。期待サイズ 1234567890 バイト。";
+    private static readonly string LongReasonA = "モデルのファイルが無い: ViT-SO400M-16-SigLIP2-384__ohanami/model.onnx (探した場所: C:\\Users\\synthetic\\AppData\\Local\\Ohanami\\models\\ViT-SO400M-16-SigLIP2-384__ohanami\\model.onnx)。期待サイズ 1234567890 バイト。";
     private static readonly string LongReasonB = "VLM の処理プログラムが 3 枚続けて異常になった。GPU が他で使われているか、ドライバの問題かもしれない(場所: C:\\Users\\synthetic\\AppData\\Local\\Ohanami\\runtime\\llama.cpp\\b12110)。";
 
     private static IReadOnlyList<Scenario> Scenarios() =>

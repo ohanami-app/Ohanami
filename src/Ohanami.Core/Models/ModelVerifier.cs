@@ -48,7 +48,7 @@ internal static class ModelVerifier
             if (!info.Exists)
             {
                 throw new ModelMismatchException(
-                    $"モデルのファイルが無い: {file.RelativePath}(探した場所: {path})。期待サイズ {file.Size.ToString(CultureInfo.InvariantCulture)} バイト、sha256 {file.Sha256}。",
+                    $"モデルのファイルが無い: {file.RelativePath} (探した場所: {path})。期待サイズ {file.Size.ToString(CultureInfo.InvariantCulture)} バイト、sha256 {file.Sha256}。",
                     file.RelativePath, file.Sha256, "(ファイル無し)");
             }
             if (info.Length != file.Size)
@@ -104,12 +104,12 @@ internal static class ModelVerifier
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
             throw new ModelMismatchException(
-                $"モデルのファイルが無い: {name}(探した場所: {path})。期待サイズ {expectedSize.ToString(CultureInfo.InvariantCulture)} バイト、sha256 {sha256}。",
+                $"モデルのファイルが無い: {name} (探した場所: {path})。期待サイズ {expectedSize.ToString(CultureInfo.InvariantCulture)} バイト、sha256 {sha256}。",
                 name, sha256, "(ファイル無し)");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            throw new ModelMismatchException($"モデルのファイルを開けない: {name}(場所: {path}): {e.Message}", e);
+            throw new ModelMismatchException($"モデルのファイルを開けない: {name} (場所: {path}): {e.Message}", e);
         }
 
         using (stream)
@@ -150,7 +150,7 @@ internal static class ModelVerifier
             if (!string.Equals(actual, sha256, StringComparison.Ordinal))
             {
                 throw new ModelMismatchException(
-                    $"モデルのファイルの sha256 が違う: {name} 期待 {sha256}、実際 {actual}(場所: {path})。",
+                    $"モデルのファイルの sha256 が違う: {name} 期待 {sha256}、実際 {actual} (場所: {path})。",
                     name, sha256, actual);
             }
         }

@@ -92,7 +92,7 @@ internal sealed class VlmVerifier
         string actual = await Sha256OfFileAsync(full, ct).ConfigureAwait(false);
         if (!string.Equals(actual, expectedSha256, StringComparison.Ordinal))
         {
-            throw new ModelMismatchException($"llama-server.exe の sha256 が違う: 期待 {expectedSha256}、実際 {actual}(場所: {full})。", "llama-server.exe", expectedSha256, actual);
+            throw new ModelMismatchException($"llama-server.exe の sha256 が違う: 期待 {expectedSha256}、実際 {actual} (場所: {full})。", "llama-server.exe", expectedSha256, actual);
         }
 
         string text = await CaptureVersionTextAsync(full, ct, versionTimeout ?? TimeSpan.FromSeconds(60)).ConfigureAwait(false);

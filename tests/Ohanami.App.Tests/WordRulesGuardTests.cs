@@ -108,8 +108,9 @@ public sealed class WordRulesGuardTests
                                 c.Add("IndexStatusText.BuildRows", text);
                             foreach (string line in notFetchedRows.NoteFull.Split('\n')) c.Add("IndexStatusText.BuildRows.NoteFull", line);
                         }
+        foreach (IndexRunState run in Enum.GetValues<IndexRunState>()) c.Add("ProcessingWords.StateHint", ProcessingWords.StateHint(run));
         foreach (Stage stage in Enum.GetValues<Stage>())
-            c.Add("IndexStatusText.StageLine", IndexStatusText.StageLine("ラベル", new StageSummary(stage, 4, 5, 3, 2)));
+            c.Add("IndexStatusText.StageLine",IndexStatusText.StageLine("ラベル", new StageSummary(stage, 4, 5, 3, 2)));
         foreach (JobKind? job in new JobKind?[] { null, JobKind.Embed, JobKind.Vlm })
         {
             c.Add("IndexStatusText.JobLabel", IndexStatusText.JobLabel(job));
@@ -161,6 +162,8 @@ public sealed class WordRulesGuardTests
         foreach (ModelDownloadPhase phase in Enum.GetValues<ModelDownloadPhase>())
         {
             var progress = new ModelDownloadProgress(phase, "a/b.bin", 1, 4, 1_000_000_000, 4_000_000_000);
+            if (phase is ModelDownloadPhase.Connecting or ModelDownloadPhase.Downloading or ModelDownloadPhase.Verifying)   // ほかの段階では「取っている最中の状態」が無い(例外になる)
+                c.Add("SetupWords.FileStateWhileDownloading", SetupWords.FileStateWhileDownloading(phase));
             c.Add("SetupWords.ProgressLine", SetupWords.ProgressLine(progress));
             c.Add("SetupWords.AmountLine", SetupWords.AmountLine(progress, null));
             c.Add("SetupWords.AmountLine", SetupWords.AmountLine(progress, 50_000_000));
@@ -261,7 +264,7 @@ public sealed class WordRulesGuardTests
             NoticeWords.StartFailed, NoticeWords.ResumeFailed, NoticeWords.PauseFailed, NoticeWords.RetryResetFailed, NoticeWords.RetryFailedStart, NoticeWords.RetrySkippedFailed,
             NoticeWords.RequeueResetFailed, NoticeWords.MissingCountFailed, NoticeWords.PurgeFailed,
         })
-            c.Add("NoticeWords.(失敗の通知)", f("理由"));
+            c.Add("NoticeWords." + f.Method.Name, f("理由"));
         c.Add("NoticeWords.RetryRestarted", NoticeWords.RetryRestarted(2, 3));
         c.Add("NoticeWords.Purged", NoticeWords.Purged(4));
         c.Add("NoticeWords.RemoveFolderConfirm", NoticeWords.RemoveFolderConfirm(@"C:\shots"));
@@ -282,7 +285,7 @@ public sealed class WordRulesGuardTests
         "ジョブ Vlm のランナーが無い(この版では動かせない)",
         "全文検索の索引を作り直している",
         "索引が壊れている",
-        "モデルのファイルの sha256 が違う: visual/model.onnx(場所: C:\\m\\visual\\model.onnx)。",
+        "モデルのファイルの sha256 が違う: visual/model.onnx (場所: C:\\m\\visual\\model.onnx)。",
         "llama-server.exe が無い: C:\\rt\\llama-server.exe。",
         "llama-server.exe の中身が違う(場所: C:\\rt\\llama-server.exe)",
         "llama-server が 3 枚続けて異常になった。",
@@ -440,21 +443,28 @@ public sealed class WordRulesGuardTests
         return found;
     }
 
-    /// <summary>日本語の文字(ひらがな・カタカナ・漢字・長音)の直後の「(」。前に半角の空白が要る(ADR 0038)。</summary>
-    private static readonly Regex JapaneseThenParen = new(@"[\u3040-\u30FF\u3400-\u9FFF\uFF66-\uFF9F]\(", RegexOptions.CultureInvariant);
+    /// <summary>
+    /// 前に半角の空白が無い、半角の「(」(ADR 0038)。前の字が何であっても(日本語・英数字・記号)、空白が要る。
+    /// 例外は、行や文の頭(前の字が無い)・空白の直後・開きの括弧とかぎ括弧(「(」「「」「『」「[」)の直後。
+    /// </summary>
+    private static readonly Regex ParenWithoutSpace = new(@"(?<=[^\s(\u300C\u300E\[])\(", RegexOptions.CultureInvariant);
+
+    /// <summary>\u584A\u306E\u672B\u5C3E\u306E\u62E1\u5F35\u5B50(<c>.png</c> \u306A\u3069\u3002\u82F1\u6570\u5B57 1\u301C5 \u5B57\u3067\u3001\u82F1\u5B57\u3092 1 \u5B57\u306F\u542B\u3080)\u3002\u5F8C\u308D\u306E\u53E5\u8AAD\u70B9\u3068\u9589\u3058\u306E\u62EC\u5F27\u306F\u9664\u3044\u3066\u898B\u308B\u3002\u30D5\u30A1\u30A4\u30EB\u540D\u306B\u898B\u3048\u308B\u584A\u306E\u5370\u3002</summary>
+    private static readonly Regex FileNameEnd = new(@"\.(?=[0-9]*[A-Za-z])[A-Za-z0-9]{1,5}[)\]\u300D\u300F\uFF09\u3002\u3001,.:;!?\u2026]*$", RegexOptions.CultureInvariant);
 
     /// <summary>「だ・である」調の語尾(説明の文は「です・ます」調。ADR 0038)。文の終わり(文末・「。」・改行・「)」・「: 」・「(」の前)にあるものだけ。</summary>
     private static readonly Regex PlainStyleEnding = new(
         @"(できなかった|できない|が無い|がない|ではない|に失敗した|に失敗している|ていない|られない|ている|終わった|終了した)(?=$|[。\n)]|: | ?\()", RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// 書き方の規則(<c>括弧の前に空白</c>・<c>です・ます調</c>)に外れた箇所。パスは見ない(空白で区切った塊が「\」か「/」を含むときは、パスとみなす)。
+    /// 書き方の規則(<c>括弧の前に空白</c>・<c>です・ます調</c>)に外れた箇所。パスとファイル名は見ない
+    /// (空白で区切った塊が「\」か「/」を含むとき、または末尾が拡張子で終わるときは、パスかファイル名とみなす。末尾の句読点と閉じの括弧は除いて見る)。
     /// 左側の文の関数にも、右側の文にも掛ける。
     /// </summary>
     internal static IEnumerable<string> StyleViolations(string text)
     {
-        string withoutPaths = Regex.Replace(text, @"\S+", m => m.Value.Contains('\\') || m.Value.Contains('/') ? "" : m.Value);
-        if (JapaneseThenParen.IsMatch(withoutPaths)) yield return "括弧の前に空白が無い";
+        string withoutPaths = Regex.Replace(text, @"\S+", m => m.Value.Contains('\\') || m.Value.Contains('/') || FileNameEnd.IsMatch(m.Value) ? "" : m.Value);
+        if (ParenWithoutSpace.IsMatch(withoutPaths)) yield return "括弧の前に空白が無い";
         Match end = PlainStyleEnding.Match(withoutPaths);
         if (end.Success) yield return "です・ます調でない語尾: " + end.Groups[1].Value;
     }
@@ -468,6 +478,26 @@ public sealed class WordRulesGuardTests
         Assert.True(c.Items.Count > 1000, $"集めた文が少なすぎる({c.Items.Count} 件)。集め方が壊れていないか");
         Dictionary<string, string> found = Found(c, s => !s.StartsWith("right:", StringComparison.Ordinal), withStyle: true);
         Assert.True(found.Count == 0, "左側の文に、画面の語ではない言葉が出ている(出どころ|語 = 文の例): " + string.Join(" / ", found.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + " = " + kv.Value)));
+    }
+
+    /// <summary>左側の型の、文を返さない関数(出どころ。文ではなくパスなどを返す)。</summary>
+    private static readonly HashSet<string> NotSentenceFunctions = new(StringComparer.Ordinal) { "ProcessingText.RevealPathOf" };
+
+    [Fact]
+    public void The_collecting_calls_every_string_function_of_the_left_side_types()
+    {
+        // 新しい文を作る関数を足したのに、見張りの集め方に足し忘れると、その文は誰も見張らない(括弧の規則も語の規則も掛からない)。足し忘れを落とす
+        var c = new Corpus();
+        CollectLeftSide(c);
+        HashSet<string> called = [.. c.Items.Select(i => i.Source)];
+        const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+        string[] notCalled =
+        [.. new[] { typeof(ProcessingWords), typeof(NoticeWords), typeof(ProcessingText), typeof(IndexStatusText), typeof(SetupWords) }
+            .SelectMany(t => t.GetMethods(flags).Where(m => !m.IsSpecialName && !m.IsPrivate && m.ReturnType == typeof(string)).Select(m => $"{t.Name}.{m.Name}"))
+            .Distinct()
+            .Where(n => !NotSentenceFunctions.Contains(n) && !called.Any(s => s == n || s.StartsWith(n + ".", StringComparison.Ordinal)))
+            .Order(StringComparer.Ordinal)];
+        Assert.True(notCalled.Length == 0, "見張りの集め方(CollectLeftSide)が呼んでいない、文を返す関数がある。足すか、文でなければ NotSentenceFunctions に書く: " + string.Join(", ", notCalled));
     }
 
     [Fact]
@@ -515,7 +545,7 @@ public sealed class WordRulesGuardTests
     [InlineData("今すぐフォルダを再スキャン")]
     [InlineData("スキャンが終わりました (0.2 秒): 新規 1、変更 0、消えた 0")]
     [InlineData("VLM の処理プログラム (llama-server) がありません")]
-    [InlineData(@"モデルのファイルの中身が想定と違う: visual/model.onnx(場所: C:\misual\model.onnx)。")]   // 実在のパスの一部は、画面に出てよい
+    [InlineData(@"モデルのファイルの中身が想定と違う: visual/model.onnx (場所: C:\misual\model.onnx)。")]   // 実在のパスの一部は、画面に出てよい
     public void The_watch_lets_the_current_words_through(string text)
     {
         Assert.Empty(Violations(text));
@@ -523,6 +553,26 @@ public sealed class WordRulesGuardTests
 
     [Theory]
     [InlineData("検索準備完了(特徴ベクトル検索の対象 10 枚)", "括弧の前に空白が無い")]
+    [InlineData("検索準備完了 (特徴ベクトル検索の対象 10 枚)", null)]
+    [InlineData("処理プログラム(llama-server)がありません", "括弧の前に空白が無い")]      // 前が英数字でも空ける
+    [InlineData("VLM(説明文)を作ります", "括弧の前に空白が無い")]
+    [InlineData("llama-server(0 件)", "括弧の前に空白が無い")]
+    [InlineData("12 / 30 枚(未作成 18)", "括弧の前に空白が無い")]
+    [InlineData("12 / 30 枚 (未作成 18)", null)]
+    [InlineData("(先頭の括弧)は空けない", null)]                               // 文の頭
+    [InlineData("1 行目\n(2 行目の頭)", null)]                                // 行の頭
+    [InlineData("読み込み 「(」 と [(] と ((二重))", null)]                    // 空白の直後・開きの括弧とかぎ括弧の直後
+    [InlineData("「(」", null)]
+    [InlineData("[(x)]", null)]
+    [InlineData("((x) (y))", null)]
+    [InlineData("1 件(a)", "括弧の前に空白が無い")]
+    [InlineData("(a)(b)", "括弧の前に空白が無い")]                             // 閉じの括弧の直後も空ける
+    [InlineData("photo(1).png", null)]                                       // ファイル名の中の「(」は変えない・見ない
+    [InlineData("写真(1).png: 読み込めませんでした", null)]
+    [InlineData("読み込めません: スクリーン(2).jpg。", null)]                   // 末尾の句読点は除いて見る
+    [InlineData("(photo(1).png)", null)]                                     // 末尾の閉じの括弧も除いて見る
+    [InlineData("model.onnx(場所: 1)", "括弧の前に空白が無い")]               // 拡張子のすぐ後ろの「(」は、名前の中ではないので空ける
+    [InlineData("x(0.5)", "括弧の前に空白が無い")]                             // 小数は拡張子ではない
     [InlineData("取り込みを止められなかった", null)]                       // 文の終わりでない(「: 」「。」が続かない)ので、語尾の規則は掛けない
     [InlineData("取り込みを止められない: 理由", "です・ます調でない語尾: られない")]
     [InlineData("起動できなかった。", "です・ます調でない語尾: できなかった")]

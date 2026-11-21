@@ -357,13 +357,13 @@ public sealed class DetailPresenterTests
     {
         string[] lines = DetailPresenter.InfoLines(Detail(width: 1920, height: 1080, size: 2_500_000), Utc).ToArray();
         Assert.Equal("寸法: 1920 × 1080", lines[0]);
-        Assert.Equal("ファイルのサイズ: 2.38 MB(2,500,000 バイト)", lines[1]);
+        Assert.Equal("ファイルのサイズ: 2.38 MB (2,500,000 バイト)", lines[1]);
         Assert.Equal("形式: PNG", lines[2]);
         Assert.Equal("最初に見つけた日時: 2026-11-06 03:04", lines[3]);
 
         Assert.Equal("寸法: 未計測 (特徴ベクトル検索のインデックスを作るときに分かります)", DetailPresenter.InfoLines(Detail(width: null, height: null), Utc)[0]);
         Assert.Equal("512 バイト", DetailPresenter.Size(512));
-        Assert.Equal("1.5 KB(1,536 バイト)", DetailPresenter.Size(1536));
+        Assert.Equal("1.5 KB (1,536 バイト)", DetailPresenter.Size(1536));
     }
 
     [Fact]
